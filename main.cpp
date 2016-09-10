@@ -112,12 +112,12 @@ public:
 		_ask_size = stoi(tokenz[5]);
 	}
 
-	const TimePoint& Time() {return _time;}
-	const string&	 Symbol() {return _symbol;}
-	double 			 Bid() {return _bid;}
-	int				 BidSize() {return _bid_size;}
-	double 			 Ask() {return _ask;}
-	int				 AskSize() {return _ask_size;}
+	const TimePoint& Time() const {return _time;}
+	const string&	 Symbol() const {return _symbol;}
+	double 			 Bid() const {return _bid;}
+	unsigned int				 BidSize() const {return _bid_size;}
+	double 			 Ask() const {return _ask;}
+	unsigned int				 AskSize() const {return _ask_size;}
 
 
 	class TimeCompare
@@ -137,9 +137,9 @@ private:
 	TimePoint 	_time;
 	string 		_symbol;
 	double 		_bid;
-	int 		_bid_size;
+	unsigned int 		_bid_size;
 	double  	_ask;
-	int		  	_ask_size;
+	unsigned int		  	_ask_size;
 };
 
 using RecordPtr = std::shared_ptr<Record>;
@@ -153,13 +153,13 @@ public:
 	Side() : _price(0.0), _qty(0) {}
 	virtual ~Side() {}
 	double price() const {return _price;}
-	double qty() const {return _qty;}
+	unsigned int qty() const {return _qty;}
 	TimePoint lastUpdate() const {return _lastUpdate;}
-	virtual bool update(const TimePoint& time, double price, double qty) = 0;
+	virtual bool update(const TimePoint& time, double price, unsigned int qty) = 0;
 protected:
 	TimePoint _lastUpdate;
 	double 	  _price;
-	int	   	  _qty;
+	unsigned int	   	  _qty;
 };
 
 class Bid : public Side
@@ -167,7 +167,7 @@ class Bid : public Side
 public:
 	Bid() {}
 	virtual ~Bid() {}
-	virtual bool update(const TimePoint& time, double price, double qty)
+	virtual bool update(const TimePoint& time, double price, unsigned int qty)
 	{
 		return true;
 	}
@@ -178,7 +178,7 @@ class Ask : public Side
 public:
 	Ask() {}
 	virtual ~Ask() {}
-	virtual bool update(const TimePoint& time, double price, double qty)
+	virtual bool update(const TimePoint& time, double price, unsigned int qty)
 	{
 		return true;
 	}
@@ -205,9 +205,15 @@ public:
 
 	bool update(const Record& record)
 	{
-		//TODO
-		// update the _lastUpdate member in Book too - based on which side has the more recent update
-		return true;
+		bool bidUpdated = _bid.update(record.Time(), record.Bid(), record.BidSize());
+		bool askUpated = _ask.update(record.Time(), record.Ask(), record.AskSize());
+		bool updated = bidUpdated || askUpated;
+		// update the _lastUpdate member in Book too
+		if(updated)
+		{
+			_lastUpdate = record.Time();
+		}
+		return updated;
 	}
 
 	string toString() const
