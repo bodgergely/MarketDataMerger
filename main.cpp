@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstdio>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <mutex>
 #include <condition_variable>
+#include <sstream>
 
 #include "InputReader.h"
 
@@ -22,7 +24,7 @@ public:
 	}
 	TimePoint(const string& time)
 	{
-		sscanf(time.c_str(), "%2d:%2d:%2d.%3d",
+		sscanf(time.c_str(), formatString,
 		    &vec[0],
 		    &vec[1],
 		    &vec[2],
@@ -37,8 +39,16 @@ public:
 	// hacky but convenient for the time comparison method
 	inline const int* repr() const {return vec;}
 
+	string toString() const
+	{
+		char buff[256] = {0};
+		snprintf(buff, sizeof(buff)-1, formatString, hr(), min(), sec(), millisec());
+		return buff;
+	}
+
 
 private:
+	constexpr static const char* formatString{"%2d:%2d:%2d.%3d"};
 	int vec[4] = {0};
 };
 
@@ -61,7 +71,7 @@ class Tokenizer
 {
 public:
 	Tokenizer(char separator) : _sep(separator) {}
-	~Tokenizer();
+	~Tokenizer() {}
 	vector<string> tokenize(const string& line) const
 	{
 		size_t pos = 0;
@@ -112,6 +122,7 @@ public:
 
 	class TimeCompare
 	{
+	public:
 		bool operator()(const std::shared_ptr<Record> a,std::shared_ptr<Record> b)
 		{
 			if(a->Time() < b->Time())
@@ -141,10 +152,10 @@ class Side
 public:
 	Side() : _price(0.0), _qty(0) {}
 	virtual ~Side() {}
-	double price() {return _price;}
-	double qty() {return _qty;}
-	TimePoint lastUpdate() {return _lastUpdate;}
-	virtual bool update(double price, double qty) = 0;
+	double price() const {return _price;}
+	double qty() const {return _qty;}
+	TimePoint lastUpdate() const {return _lastUpdate;}
+	virtual bool update(const TimePoint& time, double price, double qty) = 0;
 protected:
 	TimePoint _lastUpdate;
 	double 	  _price;
@@ -155,10 +166,10 @@ class Bid : public Side
 {
 public:
 	Bid() {}
-	~Bid() {}
-	virtual bool update(double price, double qty)
+	virtual ~Bid() {}
+	virtual bool update(const TimePoint& time, double price, double qty)
 	{
-
+		return true;
 	}
 };
 
@@ -166,10 +177,10 @@ class Ask : public Side
 {
 public:
 	Ask() {}
-	~Ask() {}
-	virtual bool update(double price, double qty)
+	virtual ~Ask() {}
+	virtual bool update(const TimePoint& time, double price, double qty)
 	{
-
+		return true;
 	}
 };
 
@@ -179,18 +190,47 @@ class Book
 {
 public:
 	Book() {}
+	Book(const Book& other) : _symbol(other.Symbol()), _lastUpdate(other.LastUpdateTime()), _bid(other.bid()), _ask(other.ask())
+	{
+	}
 	Book(const string& symbol, const Bid& bid, const Ask& ask) :
 		_symbol(symbol), _bid(bid), _ask(ask) {}
 	~Book() {}
+
+	//accessors
+	inline const string& Symbol() const {return _symbol;}
+	inline const TimePoint& LastUpdateTime() const {return _lastUpdate;}
+	inline const Bid& bid() const {return _bid;}
+	inline const Ask& ask() const {return _ask;}
+
 	bool update(const Record& record)
 	{
 		//TODO
+		// update the _lastUpdate member in Book too - based on which side has the more recent update
+		return true;
 	}
+
+	string toString() const
+	{
+		stringstream ss;
+		ss << LastUpdateTime().toString() << "," << Symbol() << "," << _bid.price() << "," << _bid.qty() << "," << _ask.price() << "," << _ask.qty();
+		return ss.str();
+	}
+
 private:
 	string 	_symbol;
+	TimePoint _lastUpdate;
 	Bid 	_bid;
 	Ask 	_ask;
 };
+
+std::ostream& operator<<(std::ostream& os, const Book& book)
+{
+	const Bid& bid = book.bid();
+	const Ask& ask = book.ask();
+	os << book.LastUpdateTime().toString() << "," << book.Symbol() << "," << bid.price() << "," << bid.qty() << "," << ask.price() << "," << ask.qty();
+}
+
 
 typedef std::shared_ptr<Book> BookPtr;
 
@@ -308,7 +348,7 @@ public:
 		while(Queue<T>::_q.size()==0)
 			_cv.wait(lock);
 
-		T elem = Queue<T>::_q.top();
+		T elem = Queue<T>::_q.front();
 		Queue<T>::_q.pop();
 		return std::move(elem);
 	}
@@ -318,32 +358,6 @@ private:
 	std::mutex _m;
 	std::condition_variable _cv;
 };
-
-
-class BookGroupProcessor
-{
-public:
-	BookGroupProcessor()
-	{
-		_processorThread = std::thread(&BookGroupProcessor::_processing, this);
-	}
-	void send(const RecordPtr& rec) {_recordQueue.push(rec);}
-
-private:
-	void _processing()
-	{
-		RecordPtr rec =_recordQueue.pop();
-		string& symbol = rec->Symbol();
-		_books[symbol].update(*rec);
-	}
-
-private:
-	BlockingQueue<RecordPtr> _recordQueue;
-	BookMap 				 _books;
-	std::thread 			 _processorThread;
-};
-
-
 
 class Reporter
 {
@@ -377,7 +391,8 @@ private:
 	std::thread			  _consumerThread;
 };
 
-typedef unique_ptr<Reporter> ReporterPtr;
+typedef shared_ptr<Reporter> ReporterPtr;
+
 
 class StandardOutputReporter : public Reporter
 {
@@ -390,15 +405,58 @@ protected:
 
 
 
+class BookGroupProcessor
+{
+public:
+	BookGroupProcessor()
+	{
+		_processorThread = std::thread(&BookGroupProcessor::_processing, this);
+	}
+
+	void registerReporter(const ReporterPtr& reporter)
+	{
+		_reporter = reporter;
+	}
+
+	void send(const RecordPtr& rec) {_recordQueue.push(rec);}
+
+
+
+private:
+	void _processing()
+	{
+		RecordPtr rec =_recordQueue.pop();
+		const string& symbol = rec->Symbol();
+		if(_books[symbol].update(*rec))
+		{
+			if(_reporter)
+				_reporter->publish(BookPtr(new Book(_books[symbol])));
+		}
+	}
+
+private:
+	BlockingQueue<RecordPtr> _recordQueue;
+	BookMap 				 _books;
+	std::thread 			 _processorThread;
+	ReporterPtr				 _reporter;
+};
+
+
+
+
+
+
+
 
 class MarketDataConsumer
 {
 public:
-	MarketDataConsumer(int numOfProcessors, ReporterPtr reporter) : _numOfProcessors(numOfProcessors),
+	MarketDataConsumer(int numOfProcessors, const ReporterPtr& reporter) : _numOfProcessors(numOfProcessors),
 																	_feedEnded(false),
-																	_processorPool(numOfProcessors),
-																	_reporter(reporter)
+																	_processorPool(numOfProcessors)
 	{
+		for(size_t i=0;i<_processorPool.size();i++)
+			_processorPool[i].registerReporter(reporter);
 
 	}
 	~MarketDataConsumer(){}
@@ -448,23 +506,25 @@ private:
 	BlockingQueue<RecordPtr> 							_incomingRecordsQueue;
 	vector<BookGroupProcessor> 		 		 			_processorPool;
 	thread					 							_multiplexerThread;
-	hash<std::string>									_hasher;
-	ReporterPtr						    				_reporter;
+	std::hash<std::string>									_hasher;
 };
 
+
+typedef std::shared_ptr<MarketDataConsumer> MarketDataConsumerPtr;
 
 
 
 class MainApp
 {
 public:
-	MainApp(vector<string> inputFiles, int processingGroupCount) : _consumer(processingGroupCount, new StandardOutputReporter())
+	MainApp(vector<string> inputFiles, int processingGroupCount) :
+													_consumer(new MarketDataConsumer(processingGroupCount, ReporterPtr(new StandardOutputReporter())))
 	{
 		for(const string& file : inputFiles)
 		{
 			_feed.addFeed(InputReaderPtr(new FileInputReader(file)));
 		}
-		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push,_consumer, placeholders::_1));
+		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push, _consumer, placeholders::_1));
 		_feed.registerEndOfDayCB(std::bind(&MarketDataConsumer::feedEnded, _consumer));
 	}
 	~MainApp() {}
@@ -473,8 +533,8 @@ public:
 		_feed.start();
 	}
 private:
-	ConsolidatedFeed 	_feed;
-	MarketDataConsumer 	_consumer;
+	ConsolidatedFeed 						_feed;
+	MarketDataConsumerPtr 					_consumer;
 };
 
 
