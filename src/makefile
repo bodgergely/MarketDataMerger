@@ -12,7 +12,6 @@ LIBS=-lm
 
 cout: main.cpp
 	g++ $(CFLAGS_DEBUG) -o ../bin/mdm-g main.cpp 
-	g++ $(CFLAGS) -o ../bin/mdm main.cpp
 
 .PHONY: clean
 

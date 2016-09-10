@@ -273,12 +273,18 @@ public:
 		_recordProducerThread = thread(&ConsolidatedFeed::_process, this);
 	}
 
+	void join()
+	{
+		_recordProducerThread.join();
+	}
+
 
 private:
 	using PriorityQueue = priority_queue<RecordPtr, vector<RecordPtr>, Record::TimeCompare>;
 
 	void _process()
 	{
+		cout << "Hello" << endl;
 		Tokenizer tokenizer(',');
 		while(true)
 		{
@@ -290,12 +296,20 @@ private:
 				{
 					if(reader->readLine(line))
 					{
-						RecordPtr record = RecordPtr(new Record(line, tokenizer));
-						_recordQueue.push(record);
-						RecordPtr rec = _recordQueue.top();
-						// callback to consumer
-						_newRecordCB(rec);
-						_recordQueue.pop();
+						cout << line << endl;
+						try
+						{
+							RecordPtr record = RecordPtr(new Record(line, tokenizer));
+							_recordQueue.push(record);
+							RecordPtr rec = _recordQueue.top();
+							// callback to consumer
+							_newRecordCB(rec);
+							_recordQueue.pop();
+						}
+						catch(const std::exception& e)
+						{
+
+						}
 					}
 				}
 				else
@@ -368,7 +382,10 @@ private:
 class Reporter
 {
 public:
-	Reporter() {}
+	Reporter()
+	{
+		_consumerThread = std::thread(&Reporter::_processing, this);
+	}
 	virtual ~Reporter() {}
 
 	void	publish(const BookPtr& topOfBook)
@@ -385,6 +402,7 @@ private:
 	{
 		while(true)
 		{
+			cout << "Reporter::_processing\n" << endl;
 			BookPtr book = _topOfBookChangedQueue.pop();
 			if(book)
 				_report(book);
@@ -431,7 +449,9 @@ public:
 private:
 	void _processing()
 	{
+		cout << "BookGroupProcessor::_processing\n" << endl;
 		RecordPtr rec =_recordQueue.pop();
+		cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
 		const string& symbol = rec->Symbol();
 		if(_books[symbol].update(*rec))
 		{
@@ -481,11 +501,19 @@ public:
 
 	void feedEnded(){/*TODO*/}
 
+
+	void join()
+	{
+		_multiplexerThread.join();
+	}
+
+private:
 	void multiplexer()
 	{
 		while(true)
 		{
 			RecordPtr record = _incomingRecordsQueue.pop();
+			cout << "Yeaah" << endl;
 			if(record)
 				multiplex(record);
 			else
@@ -504,6 +532,7 @@ public:
 	{
 		return _hasher(symbolName) % bucketCount;
 	}
+
 
 
 private:
@@ -526,17 +555,26 @@ public:
 	MainApp(vector<string> inputFiles, int processingGroupCount) :
 													_consumer(new MarketDataConsumer(processingGroupCount, ReporterPtr(new StandardOutputReporter())))
 	{
+
 		for(const string& file : inputFiles)
 		{
 			_feed.addFeed(InputReaderPtr(new FileInputReader(file)));
 		}
+
 		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push, _consumer, placeholders::_1));
 		_feed.registerEndOfDayCB(std::bind(&MarketDataConsumer::feedEnded, _consumer));
+		cout << "MainApp" << endl;
 	}
 	~MainApp() {}
 	void start()
 	{
+		_consumer->start();
 		_feed.start();
+		//loop until done
+		_feed.join();
+		_consumer->join();
+
+
 	}
 private:
 	ConsolidatedFeed 						_feed;
