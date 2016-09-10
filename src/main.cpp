@@ -530,7 +530,7 @@ private:
 			else
 				break;
 		}
-		for(auto p : _processorPool)
+		for(auto& p : _processorPool)
 		{
 			p.send(nullptr);
 			p.join();
