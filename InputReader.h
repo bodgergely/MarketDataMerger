@@ -2,13 +2,17 @@
 #define _INPUTREADER_H
 #include <fstream>
 #include <string>
+#include <memory>
 
 class InputReader
 {
 public:
-	InputReader(){}
+	InputReader() : _valid(true){}
 	virtual ~InputReader(){}
-	virtual std::string readLine() = 0;
+	bool isValid() const {return _valid;}
+	virtual bool readLine(std::string&) = 0;
+protected:
+	bool _valid;
 };
 
 
@@ -26,11 +30,17 @@ public:
 		_inputStream.close();
 	}
 
-	std::string readLine()
+
+
+	bool readLine(std::string& line)
 	{
-		std::string line;
-        std::getline(_inputStream, line);
-        return line;
+        if(std::getline(_inputStream, line))
+        	return true;
+        else
+        {
+        	_valid = false;
+        	return false;
+        }
 	}
 
 private:
@@ -38,6 +48,10 @@ private:
 	std::ifstream _inputStream;
 
 };
+
+using InputReaderPtr = std::shared_ptr<InputReader>;
+
+
 
 
 #endif
