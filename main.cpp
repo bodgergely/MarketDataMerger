@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <functional>
 
 #include "InputReader.h"
 
@@ -18,40 +19,51 @@ private:
 
 class Tokenizer
 {
-	Tokenizer(const string& line, char separator) : _line(line), _sep(separator), _pos(0) {}
+	Tokenizer(char separator) : _sep(separator) {}
 	~Tokenizer();
-	bool nextToken(string& output)
+	vector<string> tokenize(const string& line) const
 	{
-		size_t fi = _pos;
-		while(fi<_line.size() && _line[fi]!=_sep) ++fi;
-		_pos = fi;
-		output = _line.substr(_pos, fi-_pos);
-		if(output.size() > 0)
-			return true;
-		else
-			return false;
+		size_t pos = 0;
+		vector<string> tokenz;
+
+		while(pos < line.size())
+		{
+			size_t fi = pos;
+			while(fi<line.size() && line[fi]!=_sep) ++fi;
+			tokenz.push_back(line.substr(pos, fi-pos));
+			pos = fi;
+		}
+
+		return tokenz;
 
 	}
-	string _line;
-	char 	_sep;
-	size_t _pos;
 
+	char _sep;
 };
 
 /*
  * time,symbol,bid,bid_size,ask,ask_size*/
-struct Record
+class Record
 {
 public:
-	Record(const string& inputLine, const Tokenizer& tokenizer)
+	Record(const string& line, const Tokenizer tokenizer)
 	{
-		parseLine(inputLine, tokenizer);
+		parseLine(line, tokenizer);
 	}
-	bool parseLine(const string& input, const Tokenizer& tokenizer)
+	// might fail badly if the data structure is not correct
+	void parseLine(const string& line, const Tokenizer& tokenizer)
 	{
 		bool result = true;
-
+		vector<string> tokenz = tokenizer.tokenize(line);
+		_time = TimePoint(tokenz[0]);
+		_symbol = tokenz[1];
+		_bid = stod(tokenz[2]);
+		_bid_size = stoi(tokenz[3]);
+		_ask = stod(tokenz[4]);
+		_ask_size = stoi(tokenz[5]);
 	}
+
+
 private:
 	TimePoint 	_time;
 	string 		_symbol;
@@ -68,10 +80,12 @@ private:
 class Side
 {
 public:
+	Side() : _price(0.0), _qty(0) {}
+	virtual ~Side() {}
 	double price() {return _price;}
 	double qty() {return _qty;}
 	TimePoint lastUpdate() {return _lastUpdate;}
-	virtual void update(double price, double qty) = 0;
+	virtual bool update(double price, double qty) = 0;
 private:
 	TimePoint _lastUpdate;
 	double 	  _price;
@@ -80,11 +94,22 @@ private:
 
 class Bid : public Side
 {
+	Bid() {}
+	~Bid() {}
+	virtual bool update(double price, double qty)
+	{
+
+	}
 };
 
 class Ask : public Side
 {
+	Ask() {}
+	~Ask() {}
+	virtual bool update(double price, double qty)
+	{
 
+	}
 };
 
 
@@ -107,26 +132,67 @@ private:
 typedef unordered_map<string, Book> BookCollection;
 
 
-class MainApp
+
+class ConsolidatedFeed
 {
 public:
-	MainApp(vector<string> inputFiles)
+	using NewRecordCB = std::function<void(Record)>;
+	using EndOfDayCB = std::function<void(void)>;
+	ConsolidatedFeed(vector<string> inputFiles)
 	{
 		for(const string& file : inputFiles)
 		{
 			_inputReaderVec.push_back(InputReader(file));
 		}
 	}
+
+	~ConsolidatedFeed()
+	{
+
+	}
+
+	void registerNewRecordCB(const NewRecordCB& cb_) {_newRecordCB = cb_;}
+	void registerEndOfDayCB(const EndOfDayCB& cb_) {_endOfDayCB = cb_;}
+
+	// should be called after registering the callbacks
+	void start();
+
+private:
+
+	Record _nextRecord(){}
+
+private:
+	vector<InputReader> _inputReaderVec;
+	NewRecordCB			_newRecordCB;
+	EndOfDayCB			_endOfDayCB;
+};
+
+
+
+
+class MarketDataConsumer
+{
+
+};
+
+
+
+
+class MainApp
+{
+public:
+	MainApp(vector<string> inputFiles)
+	{
+
+	}
 	~MainApp() {}
 	void start()
 	{
-		for(InputReader& reader : _inputReaderVec)
-		{
-
-		}
+		_feed.start();
 	}
 private:
-	vector<InputReader> _inputReaderVec;
+	ConsolidatedFeed 	_feed;
+	MarketDataConsumer 	_consumer;
 };
 
 
