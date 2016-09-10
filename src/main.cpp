@@ -321,6 +321,7 @@ private:
 			if(invalidReaderCount == _inputReaderVec.size())
 			{
 				_endOfDayCB();
+				_newRecordCB(nullptr);
 				return;
 			}
 		}
@@ -444,19 +445,29 @@ public:
 
 	void send(const RecordPtr& rec) {_recordQueue.push(rec);}
 
-
+	void join() {_processorThread.join();}
 
 private:
 	void _processing()
 	{
-		cout << "BookGroupProcessor::_processing\n" << endl;
-		RecordPtr rec =_recordQueue.pop();
-		cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
-		const string& symbol = rec->Symbol();
-		if(_books[symbol].update(*rec))
+		while(true)
 		{
-			if(_reporter)
-				_reporter->publish(BookPtr(new Book(_books[symbol])));
+			cout << "BookGroupProcessor::_processing\n" << endl;
+			RecordPtr rec =_recordQueue.pop();
+			if(rec)
+			{
+				cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
+				const string& symbol = rec->Symbol();
+				if(_books[symbol].update(*rec))
+				{
+					if(_reporter)
+						_reporter->publish(BookPtr(new Book(_books[symbol])));
+				}
+			}
+			else
+			{
+				break;
+			}
 		}
 	}
 
@@ -518,6 +529,11 @@ private:
 				multiplex(record);
 			else
 				break;
+		}
+		for(auto p : _processorPool)
+		{
+			p.send(nullptr);
+			p.join();
 		}
 		_feedEnded = true;
 	}
