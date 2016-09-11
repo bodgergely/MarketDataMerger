@@ -100,7 +100,7 @@ public:
 		_parseLine(line, tokenizer);
 	}
 
-	const FeedID     FeedID() const {return _feedID;}
+	const FeedID&     Feedid() const {return _feedID;}
 	const TimePoint& Time() const {return _time;}
 	const string&	 Symbol() const {return _symbol;}
 	double 			 Bid() const {return _bid;}
@@ -111,7 +111,7 @@ public:
 	std::string toString() const
 	{
 		stringstream ss;
-		ss << FeedID() << "," << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
+		ss << Feedid() << "," << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
 		return ss.str();
 	}
 
@@ -194,6 +194,21 @@ private:
 	unsigned int	   	  _qty;
 };
 
+bool operator==(const Side& lhs, const Side& rhs)
+{
+	if(lhs.price()==rhs.price() && lhs.qty() == rhs.qty())
+		return true;
+	else
+		return false;
+}
+
+bool operator!=(const Side& lhs, const Side& rhs)
+{
+	if(lhs==rhs)
+		return false;
+	else
+		return true;
+}
 
 enum SideEnum
 {
@@ -216,7 +231,7 @@ public:
 
 	void update(const Record& record)
 	{
-		assert(record.FeedID()==_feedID);
+		assert(record.Feedid()==_feedID);
 		_lastUpdate = record.Time();
 		_bid.update(record.Bid(), record.BidSize());
 		_ask.update(record.Ask(), record.AskSize());
@@ -387,20 +402,30 @@ public:
 	class CompositeTopLevel
 	{
 	public:
-		CompositeTopLevel(const Side& bid, const Side& ask, const TimePoint& lastUpdate) : _bid(bid), _ask(ask), _lastUpdate(lastUpdate) {}
-		const Side& Bid() const {return _bid;}
-		const Side& Ask() const {return _ask;}
-		const TimePoint& LastUpdate() const {return _lastUpdate;}
+		CompositeTopLevel() {}
+		CompositeTopLevel(const string& symbol, const Side& bid, const Side& ask, const TimePoint& lastUpdate) : _symbol(symbol), _bid(bid), _ask(ask), _lastUpdate(lastUpdate) {}
+		inline const string& Symbol() const {return _symbol;}
+		inline const Side& Bid() const {return _bid;}
+		inline const Side& Ask() const {return _ask;}
+		inline const TimePoint& LastUpdate() const {return _lastUpdate;}
+		string toString() const
+		{
+			stringstream ss;
+			ss << LastUpdate().toString() << "," << Symbol() << "," << Bid().price() << "," << Bid().qty() << "," << Ask().price() << "," << Ask().qty();
+			return ss.str();
+		}
 	private:
+		string _symbol;
 		Side _bid;
 		Side _ask;
-		const TimePoint _lastUpdate;
+		TimePoint _lastUpdate;
 	};
+
 	CompositeBook(const string& symbol) : _symbol(symbol) {}
 	~CompositeBook(){}
 
 	const TimePoint& LastUpdate() const { return _lastChangeTime; }
-	CompositeTopLevel getTopBook() const {return CompositeBook(_topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
+	CompositeTopLevel getTopBook() const {return CompositeBook::CompositeTopLevel(_symbol, _topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
 
 
 	bool update(const Record& record)
@@ -411,7 +436,7 @@ public:
 
 
 		 const string& symbol = record.Symbol();
-		const FeedID& feedid = record.FeedID();
+		const FeedID& feedid = record.Feedid();
 		if(_bookPerFeed.find(feedid)==_bookPerFeed.end())
 		{
 			_bookPerFeed.emplace(feedid, BookPtr(new Book(symbol, feedid)));
@@ -499,7 +524,7 @@ private:
 	}
 
 
-	bool _mergeBid(const FeedID& feedid, const Record& record, bool& didRemove)
+	void _mergeBid(const FeedID& feedid, const Record& record, bool& didRemove)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Bid))
 		{
@@ -518,7 +543,7 @@ private:
 		}
 	}
 
-	bool _mergeAsk(const FeedID& feedid, const Record& record, bool& didRemove)
+	void _mergeAsk(const FeedID& feedid, const Record& record, bool& didRemove)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Ask))
 		{
@@ -547,7 +572,8 @@ private:
 
 
 
-typedef unordered_map<string, CompositeBook> CompositeBookMap;
+typedef std::shared_ptr<CompositeBook> CompositeBookPtr;
+typedef unordered_map<string, CompositeBookPtr> CompositeBookMap;
 
 
 
@@ -645,9 +671,6 @@ public:
 			_feeds[oldestFeedIndex]->clearCache();
 		}
 
-		if(oldestRecord)
-			cout << oldestRecord->toString() << endl;
-
 		return oldestRecord;
 
 	}
@@ -714,24 +737,25 @@ private:
 class Reporter
 {
 public:
-	Reporter() : _finished(false)
+	Reporter()
 	{
 		_consumerThread = std::thread(&Reporter::_processing, this);
 	}
 	virtual ~Reporter()
 	{
+		requestStop();
 		join();
 	}
 
-	void	publish(const BookPtr& topOfBook)
+	void	publish(const CompositeBook::CompositeTopLevel& topOfBook)
 	{
-		std::lock_guard<std::mutex> lock(_mutex);
-		if(!_finished)
-		{
-			if(!topOfBook)
-				_finished = true;
-			_topOfBookChangedQueue.push(topOfBook);
-		}
+		_topOfBookChangedQueue.push(topOfBook);
+	}
+
+	void requestStop()
+	{
+
+		_topOfBookChangedQueue.requestStop();
 	}
 
 	void join()
@@ -742,30 +766,26 @@ public:
 
 
 protected:
-	virtual void _report(const BookPtr& book) = 0;
+	virtual void _report(const CompositeBook::CompositeTopLevel& book) = 0;
 
 private:
 	void _processing()
 	{
 		while(true)
 		{
-			BookPtr book{nullptr};
-			if(_topOfBookChangedQueue.pop(book))
+			CompositeBook::CompositeTopLevel top;
+			if(_topOfBookChangedQueue.pop(top))
 			{
-				if(book)
-					_report(book);
-				else
-					break;
+				_report(top);
 			}
 			else
 				break;
 		}
 	}
 private:
-	BlockingQueue<BookPtr> _topOfBookChangedQueue;
+	BlockingQueue<CompositeBook::CompositeTopLevel> _topOfBookChangedQueue;
 	std::thread			  _consumerThread;
 	std::mutex			  _mutex;
-	bool				  _finished;
 
 };
 
@@ -775,9 +795,9 @@ typedef shared_ptr<Reporter> ReporterPtr;
 class StandardOutputReporter : public Reporter
 {
 protected:
-	virtual void _report(const BookPtr& book)
+	virtual void _report(const CompositeBook::CompositeTopLevel& top)
 	{
-		//cout << book->toString() << endl;
+		cout << top.toString() << endl;
 	}
 };
 
@@ -792,8 +812,6 @@ public:
 	}
 	~BookGroupProcessor()
 	{
-		_reporter->publish(nullptr);
-		_reporter->join();
 	}
 
 	void registerReporter(const ReporterPtr& reporter)
@@ -823,18 +841,18 @@ private:
 					const string& symbol = rec->Symbol();
 					if(_books.find(symbol)==_books.end())
 					{
-						_books[symbol] = Book(*rec);
-						doPublish = true;
-					}
-					else if(_books[symbol].update(*rec))
-					{
-						doPublish = true;
+						_books[symbol] = CompositeBookPtr(new CompositeBook(symbol));
 					}
 
-					if(doPublish && _reporter)
+					CompositeBookPtr& book = _books[symbol];
+					bool topofBookChanged = book->update(*rec);
+					if(topofBookChanged)
 					{
-						_reporter->publish(BookPtr(new Book(_books[symbol])));
+						CompositeBook::CompositeTopLevel top = book->getTopBook();
+						if(_reporter)
+							_reporter->publish(top);
 					}
+
 				}
 				else
 				{
@@ -994,5 +1012,4 @@ int main(int argc, char** argv)
 	app.start();
 
 	return 0;
-
 }
