@@ -7,6 +7,11 @@
 #include <atomic>
 #include <condition_variable>
 
+/*
+ * Rather quickly "hacked together" blocking queue implementation
+ * */
+
+
 template<class T>
 class Queue
 {

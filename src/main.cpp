@@ -395,6 +395,52 @@ private:
 };
 
 
+class BookStatistics
+{
+public:
+	BookStatistics() {}
+	BookStatistics(const string& symbol) : _symbol(symbol) {}
+	bool trySetBid(double p)
+	{
+		if(p < _minBid){
+			_minBid = p;
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool trySetAsk(double p)
+	{
+		if(p > _maxAsk){
+			_maxAsk = p;
+			return true;
+		}
+		else
+			return false;
+	}
+
+	void increaseUpdateCount() {++_updateCount;}
+
+	const string& Symbol() const {return _symbol;}
+	double MinBid() const {return _minBid;}
+	double MaxAsk() const {return _maxAsk;}
+	unsigned int UpdateCount() const {return _updateCount;}
+
+	string toString() const
+	{
+		stringstream ss;
+		ss << "Symbol " << Symbol() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
+		return ss.str();
+	}
+
+private:
+	string		 _symbol;
+	double	 	 _minBid{std::numeric_limits<double>::max()};
+	double       _maxAsk{std::numeric_limits<double>::min()};
+	unsigned int _updateCount{0};
+};
+
 
 class CompositeBook
 {
@@ -421,12 +467,19 @@ public:
 		TimePoint _lastUpdate;
 	};
 
-	CompositeBook(const string& symbol) : _symbol(symbol) {}
+	CompositeBook(const string& symbol) : _symbol(symbol), _statistics(symbol) {}
 	~CompositeBook(){}
 
+
+	// these are supposed to be called on the same thread as the the one ehich updates the book - they arent thread safe
 	const TimePoint& LastUpdate() const { return _lastChangeTime; }
 	CompositeTopLevel getTopBook() const {return CompositeBook::CompositeTopLevel(_symbol, _topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
 
+	BookStatistics getStatistics() const
+	{
+		std::lock_guard<std::mutex> lock(_statisticsMutex);
+		return _statistics;
+	}
 
 	bool update(const Record& record)
 	{
@@ -452,11 +505,8 @@ public:
 
 		_bookPerFeed[feedid]->update(record);
 
-		bool didRemoveBid = false;
-		bool didRemoveAsk = false;
-
-		_mergeBid(feedid, record, didRemoveBid);
-		_mergeAsk(feedid, record, didRemoveAsk);
+		_mergeBid(feedid, record);
+		_mergeAsk(feedid, record);
 
 		if(_topLevel.BidCount() == 0)
 			_tryReplaceBid();
@@ -467,6 +517,7 @@ public:
 		{
 			_lastChangeTime = record.Time();
 			topChanged = true;
+			updateStats();
 		}
 
 		return topChanged;
@@ -475,6 +526,14 @@ public:
 
 
 private:
+	void updateStats()
+	{
+		std::lock_guard<std::mutex> lock(_statisticsMutex);
+		_statistics.increaseUpdateCount();
+		_statistics.trySetBid(_topLevel.Bid().price());
+		_statistics.trySetAsk(_topLevel.Ask().price());
+	}
+
 	void _tryReplaceBid()
 	{
 		vector<pair<FeedID,Side>> replacements;
@@ -530,14 +589,13 @@ private:
 	}
 
 
-	void _mergeBid(const FeedID& feedid, const Record& record, bool& didRemove)
+	void _mergeBid(const FeedID& feedid, const Record& record)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Bid))
 		{
 			if(record.Bid() < _topLevel.Bid().price())
 			{
 				_topLevel.remove(feedid, SideEnum::Bid);
-				didRemove = true;
 			}
 			else
 				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
@@ -549,14 +607,13 @@ private:
 		}
 	}
 
-	void _mergeAsk(const FeedID& feedid, const Record& record, bool& didRemove)
+	void _mergeAsk(const FeedID& feedid, const Record& record)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Ask))
 		{
 			if(record.Ask() > _topLevel.Ask().price())
 			{
 				_topLevel.remove(feedid, SideEnum::Ask);
-				didRemove = true;
 			}
 			else
 				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
@@ -573,15 +630,14 @@ private:
 	unordered_map<FeedID, BookPtr> _bookPerFeed;
 	TopLevel					   _topLevel;
 	TimePoint					   _lastChangeTime;
-	//BookStatistics				   _statistics;
+	mutable	std::mutex			   _statisticsMutex;
+	BookStatistics				   _statistics;
 };
 
 
 
 typedef std::shared_ptr<CompositeBook> CompositeBookPtr;
 typedef unordered_map<string, CompositeBookPtr> CompositeBookMap;
-
-
 
 
 
@@ -840,7 +896,11 @@ public:
 			_processorThread.join();
 	}
 
+	const unordered_map<string, BookStatistics>& bookStats() const {return _bookStats;}
+
 private:
+
+
 	void _processing()
 	{
 		while(true)
@@ -876,9 +936,21 @@ private:
 				break;
 
 		}
+
+		_prepareBookStatistics();
+
+	}
+
+	void _prepareBookStatistics()
+	{
+		for(const auto& p : _books)
+		{
+			_bookStats[p.first] = p.second->getStatistics();
+		}
 	}
 
 private:
+	unordered_map<string, BookStatistics> _bookStats;
 	BlockingQueue<RecordPtr> _recordQueue;
 	CompositeBookMap 		 _books;
 	std::thread 			 _processorThread;
@@ -904,7 +976,10 @@ public:
 			_processorPool[i].registerReporter(reporter);
 
 	}
-	~MarketDataConsumer(){}
+	~MarketDataConsumer()
+	{
+		join();
+	}
 
 
 
@@ -925,6 +1000,21 @@ public:
 	{
 		if(_multiplexerThread.joinable())
 			_multiplexerThread.join();
+	}
+
+	unordered_map<string, BookStatistics> getBookStatistics()
+	{
+		unordered_map<string, BookStatistics> stats;
+		for(const auto& procpool : _processorPool)
+		{
+			const unordered_map<string, BookStatistics>& bs = procpool.bookStats();
+			for(const auto& p : bs)
+			{
+				stats.insert(p);
+			}
+		}
+
+		return std::move(stats);
 	}
 
 private:
@@ -956,6 +1046,7 @@ private:
 		_processorPool[bucket].send(record);
 	}
 
+	// we might do different load balancing - especially if we know that certain symbols are very traffic heavy
 	inline unsigned int hash(const std::string& symbolName, int bucketCount) const
 	{
 		return _hasher(symbolName) % bucketCount;
@@ -981,8 +1072,8 @@ typedef std::shared_ptr<MarketDataConsumer> MarketDataConsumerPtr;
 class MainApp
 {
 public:
-	MainApp(vector<string> inputFiles, int processingGroupCount) :
-													_consumer(new MarketDataConsumer(processingGroupCount, ReporterPtr(new StandardOutputReporter())))
+	MainApp(vector<string> inputFiles, int processingGroupCount) : _reporter(ReporterPtr(new StandardOutputReporter())),
+													_consumer(new MarketDataConsumer(processingGroupCount, _reporter))
 	{
 
 		FeedID feedid = 0;
@@ -1004,10 +1095,31 @@ public:
 		//loop until done
 		_feed.join();
 		_consumer->join();
+		_reporter->requestStop();
+		_reporter->join();
+
+		_reportBookStatistics();
 
 
 	}
+
 private:
+	void _reportBookStatistics()
+	{
+		cout << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
+		cout << "Reporting book statistics:\n";
+		cout << "\n";
+		unordered_map<string, BookStatistics> bookstats = _consumer->getBookStatistics();
+		for(auto& p : bookstats)
+		{
+			cout << p.second.toString() << endl;
+		}
+		cout << "\nEnd of Book Statistics\n";
+		cout << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
+	}
+
+private:
+	ReporterPtr								_reporter;
 	FeedManager 							_feed;
 	MarketDataConsumerPtr 					_consumer;
 };
