@@ -13,6 +13,8 @@ LIBS=-lm
 cout: main.cpp test.cpp
 	g++ $(CFLAGS_DEBUG) -o ../bin/mdm-g main.cpp
 	g++ $(CFLAGS_DEBUG) -o ../tests/test-driver-g test.cpp -lpthread -lgtest -lgtest_main
+	g++ $(CFLAGS) -o ../bin/mdm main.cpp 
+	g++ $(CFLAGS) -o ../tests/test-driver main.cpp test.cpp -lpthread -lgtest -lgtest_main
 
 .PHONY: clean
 

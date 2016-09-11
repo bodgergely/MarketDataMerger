@@ -743,7 +743,7 @@ private:
 class Reporter
 {
 public:
-	Reporter()
+	Reporter() : _topOfBookChangedQueue(std::chrono::milliseconds(1000))
 	{
 		_consumerThread = std::thread(&Reporter::_processing, this);
 	}
@@ -760,7 +760,6 @@ public:
 
 	void requestStop()
 	{
-
 		_topOfBookChangedQueue.requestStop();
 	}
 
@@ -800,6 +799,13 @@ typedef shared_ptr<Reporter> ReporterPtr;
 
 class StandardOutputReporter : public Reporter
 {
+public:
+	StandardOutputReporter() {}
+	virtual ~StandardOutputReporter()
+	{
+		requestStop();
+		join();
+	}
 protected:
 	virtual void _report(const CompositeBook::CompositeTopLevel& top)
 	{
@@ -890,7 +896,8 @@ class MarketDataConsumer
 public:
 	MarketDataConsumer(int numOfProcessors, const ReporterPtr& reporter) : _numOfProcessors(numOfProcessors),
 																	_feedEnded(false),
-																	_processorPool(numOfProcessors)
+																	_processorPool(numOfProcessors),
+																	_reporter(reporter)
 	{
 		for(size_t i=0;i<_processorPool.size();i++)
 			_processorPool[i].registerReporter(reporter);
@@ -963,6 +970,7 @@ private:
 	vector<BookGroupProcessor> 		 		 			_processorPool;
 	thread					 							_multiplexerThread;
 	std::hash<std::string>								_hasher;
+	ReporterPtr											_reporter;
 };
 
 

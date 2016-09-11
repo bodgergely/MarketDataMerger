@@ -23,12 +23,12 @@ template<class T>
 class BlockingQueue : public Queue<T>
 {
 public:
-	BlockingQueue(std::chrono::milliseconds timeout=std::chrono::milliseconds(5)) : _timeoutDuration(timeout){}
+	BlockingQueue(std::chrono::milliseconds timeout=std::chrono::milliseconds(10)) : _timeoutDuration(timeout){}
 	virtual ~BlockingQueue(){}
 	virtual void push(const T& val)
 	{
 		std::unique_lock<std::mutex> lock(_m);
-		if(!_stopConsumeRequested.load())
+		if(!_stopRequested.load())
 		{
 			Queue<T>::_q.push(val);
 			_cv.notify_all();
@@ -43,7 +43,7 @@ public:
 		{
 			if(_cv.wait_for(lock, _timeoutDuration) == std::cv_status::timeout)
 			{
-				if(_stopConsumeRequested.load() == true && Queue<T>::_q.size()==0)
+				if(_stopRequested.load() == true && Queue<T>::_q.size()==0)
 					return false;
 			}
 		}
@@ -53,13 +53,13 @@ public:
 		return true;
 	}
 
-	void requestStop() {_stopConsumeRequested.store(true);}
+	void requestStop() {_stopRequested.store(true);}
 
 
 private:
 	std::mutex _m;
 	std::condition_variable _cv;
-	std::atomic<bool> _stopConsumeRequested{false};
+	std::atomic<bool> _stopRequested{false};
 	std::chrono::milliseconds _timeoutDuration;
 };
 
