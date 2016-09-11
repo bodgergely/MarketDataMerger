@@ -5,6 +5,7 @@
 #include <thread>
 #include <atomic>
 #include <fstream>
+#include <iostream>
 
 class Logger
 {
@@ -24,7 +25,9 @@ public:
 
 	inline void log(const std::string& msg)
 	{
+		std::cout << "Pushing into log: " << msg << std::endl;
 		_queue.push(msg);
+		std::cout << "Pushed" << std::endl;
 	}
 
 	inline void operator()(const std::string& msg)
@@ -42,6 +45,7 @@ private:
 			int c = 0;
 			if(_queue.pop(msg))
 			{
+				std::cout << "Popped log message: " << msg << std::endl;
 				_logFile << msg << "\n";
 				if(++c >= _flushAfterCountMsg)
 				{

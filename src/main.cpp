@@ -21,10 +21,8 @@
 using namespace std;
 
 
-Logger logger("/tmp/MarketDataMergerLog");
+Logger LOG("/tmp/MarketDataMergerLog");
 
-
-#define LOG logger;
 
 
 class TimePoint
