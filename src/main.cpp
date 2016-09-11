@@ -11,6 +11,8 @@
 #include <condition_variable>
 #include <sstream>
 #include <cassert>
+#include <algorithm>
+#include <locale>
 
 #include "InputReader.h"
 #include "Tokenizer.h"
@@ -28,10 +30,10 @@ Logger LOG("/tmp/MarketDataMergerLog");
 class TimePoint
 {
 public:
-	TimePoint()
+	TimePoint() : _valid(false)
 	{
 	}
-	TimePoint(const string& time)
+	explicit TimePoint(const string& time) : _valid(true)
 	{
 		sscanf(time.c_str(), formatString,
 		    &vec[0],
@@ -45,6 +47,8 @@ public:
 	inline int sec() const {return vec[2];}
 	inline int millisec() const {return vec[3];}
 
+	inline bool isValid() const {return _valid;}
+
 	// hacky but convenient for the time comparison method
 	inline const int* repr() const {return vec;}
 
@@ -57,7 +61,8 @@ public:
 
 
 private:
-	constexpr static const char* formatString{"%2d:%2d:%2d.%3d"};
+	constexpr static const char* formatString{"%02d:%02d:%02d.%03d"};
+	bool _valid;
 	int vec[4] = {0};
 };
 
@@ -74,6 +79,13 @@ inline bool operator<(const TimePoint& lhs, const TimePoint& rhs)
 
 	return true;
 }
+
+inline bool operator>(const TimePoint& lhs, const TimePoint& rhs)
+{
+	return !(lhs<rhs);
+}
+
+
 
 
 /*
@@ -95,6 +107,13 @@ public:
 	double 			 Ask() const {return _ask;}
 	unsigned int				 AskSize() const {return _ask_size;}
 
+	std::string toString() const
+	{
+		stringstream ss;
+		ss << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
+		return ss.str();
+	}
+
 	class TimeCompare
 	{
 	public:
@@ -107,11 +126,24 @@ public:
 		}
 	};
 
+	class RecordInvalid : public std::exception
+	{
+	public:
+		RecordInvalid(const std::string& line) : _line(line) {}
+		virtual const char* what() const noexcept
+		{
+			return _line.c_str();
+		}
+	private:
+		const std::string _line;
+	};
+
 private:
 	// might fail badly if the data structure is not correct
 	void _parseLine(const string& line, const Tokenizer& tokenizer)
 	{
 		bool result = true;
+		_sanityCheck(line);
 		vector<string> tokenz = tokenizer.tokenize(line);
 		_time = TimePoint(tokenz[0]);
 		_symbol = tokenz[1];
@@ -119,6 +151,12 @@ private:
 		_bid_size = stoi(tokenz[3]);
 		_ask = stod(tokenz[4]);
 		_ask_size = stoi(tokenz[5]);
+	}
+
+	void _sanityCheck(const string& line)
+	{
+		if(line.size() == 0 || isspace(line[0]))
+			throw RecordInvalid(line);
 	}
 
 
@@ -140,6 +178,7 @@ class Side
 {
 public:
 	Side() : _price(0.0), _qty(0) {}
+	Side(double price, unsigned int qty) : _price(price), _qty(qty) {}
 	virtual ~Side() {}
 	double price() const {return _price;}
 	unsigned int qty() const {return _qty;}
@@ -155,10 +194,23 @@ class Bid : public Side
 {
 public:
 	Bid() {}
+	Bid(double price, unsigned int qty) : Side(price, qty) {}
 	virtual ~Bid() {}
 	virtual bool update(const TimePoint& time, double price, unsigned int qty)
 	{
-		return true;
+		bool updated = false;
+		if(price > _price)
+		{
+			_price = price;
+			_qty = qty;
+			updated = true;
+		}
+		else if(price == _price && qty != _qty)
+		{
+			_qty = qty;
+			updated = true;
+		}
+		return updated;
 	}
 };
 
@@ -166,10 +218,23 @@ class Ask : public Side
 {
 public:
 	Ask() {}
+	Ask(double price, unsigned int qty) : Side(price, qty) {}
 	virtual ~Ask() {}
 	virtual bool update(const TimePoint& time, double price, unsigned int qty)
 	{
-		return true;
+		bool updated = false;
+		if(price < _price)
+		{
+			_price = price;
+			_qty = qty;
+			updated = true;
+		}
+		else if(price == _price && qty != _qty)
+		{
+			_qty = qty;
+			updated = true;
+		}
+		return updated;
 	}
 };
 
@@ -181,6 +246,10 @@ public:
 	Book() {}
 	Book(const Book& other) : _symbol(other.Symbol()), _lastUpdate(other.LastUpdateTime()), _bid(other.bid()), _ask(other.ask())
 	{
+	}
+	Book(const Record& rec) : _symbol(rec.Symbol()), _lastUpdate(rec.Time()), _bid(rec.Bid(), rec.BidSize()), _ask(rec.Ask(), rec.AskSize())
+	{
+
 	}
 	Book(const string& symbol, const Bid& bid, const Ask& ask) :
 		_symbol(symbol), _bid(bid), _ask(ask) {}
@@ -221,12 +290,9 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const Book& book)
 {
-	cout << "std::ostream& operator<<(std::ostream& os, const Book& book)" << endl;
 	const Bid& bid = book.bid();
 	const Ask& ask = book.ask();
-	cout << "std::ostream& operator<<(std::ostream& os, const Book& book)ewrewrwr" << endl;
 	os << book.LastUpdateTime().toString() << "," << book.Symbol() << "," << bid.price() << "," << bid.qty() << "," << ask.price() << "," << ask.qty();
-	cout << "Ever got here????" << endl;
 }
 
 
@@ -238,31 +304,132 @@ typedef unordered_map<string, Book> BookMap;
 
 
 
+
+class Feed
+{
+public:
+	Feed(const InputReaderPtr& input) : _input(input), _cache(nullptr)
+	{
+	}
+	~Feed() {}
+	const bool 	 		readNextRecordToCache()
+	{
+		string line;
+		Tokenizer tokenizer(',');
+		if(_input->isValid())
+		{
+			_input->readLine(line);
+			//cout << "Line read " << line << endl;
+			try
+			{
+				_cache = RecordPtr(new Record(line, tokenizer));
+				return true;
+			}
+			catch(const Record::RecordInvalid& e)
+			{
+				LOG("record invalid exception:" + string(e.what()) + "End of line");
+				//cout << "record invalid exception:" << string(e.what()) << "End of line" << endl;
+				_cache = nullptr;
+			}
+		}
+
+		return false;
+
+
+	}
+	const RecordPtr&	 cache() const {return _cache;}
+	void				 clearCache() { _cache = nullptr; }
+
+	inline bool			 isValid() const {return _input->isValid();}
+protected:
+	InputReaderPtr 	_input;
+	RecordPtr		_cache;
+};
+
+typedef std::unique_ptr<Feed> FeedPtr;
+
+
 class ConsolidatedFeed
+{
+public:
+	void	  addFeed(FeedPtr&& feed)
+	{
+		_feeds.push_back(std::forward<FeedPtr>(feed));
+	}
+	RecordPtr nextRecord()
+	{
+		RecordPtr oldestRecord{nullptr};
+		TimePoint oldestTime;
+		int		  oldestFeedIndex = 0;
+		for(int i=0;i<_feeds.size();i++)
+		{
+			FeedPtr& feed = _feeds[i];
+			if(feed->isValid())
+			{
+				TimePoint time;
+				if(feed->cache()!=nullptr)
+				{
+					time = feed->cache()->Time();
+				}
+				else
+				{
+					if(feed->readNextRecordToCache())
+						time = feed->cache()->Time();
+				}
+
+				if(!oldestTime.isValid())
+				{
+					oldestTime = time;
+					oldestFeedIndex = i;
+				}
+				else if(oldestTime>time)
+				{
+					oldestTime = time;
+					oldestFeedIndex = i;
+				}
+			}
+		}
+
+		if(oldestTime.isValid())
+		{
+			oldestRecord = _feeds[oldestFeedIndex]->cache();
+			_feeds[oldestFeedIndex]->clearCache();
+		}
+
+		if(oldestRecord)
+			cout << oldestRecord->toString() << endl;
+
+		return oldestRecord;
+
+	}
+private:
+	vector<FeedPtr> _feeds;
+};
+
+
+
+
+
+class FeedManager
 {
 public:
 	using NewRecordCB = std::function<void(const RecordPtr&)>;
 	using EndOfDayCB = std::function<void(void)>;
-	ConsolidatedFeed() {}
-	ConsolidatedFeed(const vector<InputReaderPtr>& feeds) : _inputReaderVec(feeds)
+	FeedManager() {}
+	~FeedManager() {}
+
+	void addFeed(FeedPtr&& feed)
 	{
-
+		_consolidatedFeed.addFeed(std::forward<FeedPtr>(feed));
 	}
-
-	~ConsolidatedFeed()
-	{
-
-	}
-
-	void addFeed(const InputReaderPtr& feed) {_inputReaderVec.push_back(feed);}
 
 	void registerNewRecordCB(const NewRecordCB& cb_) {_newRecordCB = cb_;}
-	void registerEndOfDayCB(const EndOfDayCB& cb_) {_endOfDayCB = cb_;}
+	//void registerEndOfDayCB(const EndOfDayCB& cb_) {_endOfDayCB = cb_;}
 
 	// should be called after registering the callbacks
 	void start()
 	{
-		_recordProducerThread = thread(&ConsolidatedFeed::_process, this);
+		_recordProducerThread = thread(&FeedManager::_process, this);
 	}
 
 	void join()
@@ -273,61 +440,24 @@ public:
 
 
 private:
-	using PriorityQueue = priority_queue<RecordPtr, vector<RecordPtr>, Record::TimeCompare>;
-
 	void _process()
 	{
-		cout << "Hello" << endl;
-		Tokenizer tokenizer(',');
 		while(true)
 		{
-			int invalidReaderCount = 0;
-			for(InputReaderPtr& reader : _inputReaderVec)
-			{
-				string line;
-				if(reader->isValid())
-				{
-					if(reader->readLine(line))
-					{
-						cout << line << endl;
-						try
-						{
-							RecordPtr record = RecordPtr(new Record(line, tokenizer));
-							_recordQueue.push(record);
-							RecordPtr rec = _recordQueue.top();
-							// callback to consumer
-							cout << "Pushing into consumer queue" << endl;
-							_newRecordCB(rec);
-							_recordQueue.pop();
-						}
-						catch(const std::exception& e)
-						{
-							cout << "Failed to process record: " << line << endl;
-						}
-					}
-				}
-				else
-				{
-					++invalidReaderCount;
-				}
-			}
-			// exit if all the readers are invalid
-			if(invalidReaderCount == _inputReaderVec.size())
-			{
-				_endOfDayCB();
-				_newRecordCB(nullptr);
-				return;
-			}
+			RecordPtr rec = _consolidatedFeed.nextRecord();
+			_newRecordCB(rec);
+			if(!rec)
+				break;
 		}
+		LOG("Reached end of all feeds.");
 	}
 
 
 private:
-	vector<InputReaderPtr>  		_inputReaderVec;
+	ConsolidatedFeed				_consolidatedFeed;
 	NewRecordCB						_newRecordCB;
-	EndOfDayCB						_endOfDayCB;
+	//EndOfDayCB						_endOfDayCB;
 	thread							_recordProducerThread;
-	PriorityQueue					_recordQueue;
 };
 
 
@@ -339,7 +469,10 @@ public:
 	{
 		_consumerThread = std::thread(&Reporter::_processing, this);
 	}
-	virtual ~Reporter() {}
+	virtual ~Reporter()
+	{
+		join();
+	}
 
 	void	publish(const BookPtr& topOfBook)
 	{
@@ -395,7 +528,7 @@ class StandardOutputReporter : public Reporter
 protected:
 	virtual void _report(const BookPtr& book)
 	{
-		cout << *book << "\n";
+		//cout << book->toString() << endl;
 	}
 };
 
@@ -435,14 +568,23 @@ private:
 			RecordPtr rec{nullptr};
 			if(_recordQueue.pop(rec))
 			{
+				bool doPublish = false;
 				if(rec)
 				{
-					cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
 					const string& symbol = rec->Symbol();
-					if(_books[symbol].update(*rec))
+					if(_books.find(symbol)==_books.end())
 					{
-						if(_reporter)
-							_reporter->publish(BookPtr(new Book(_books[symbol])));
+						_books[symbol] = Book(*rec);
+						doPublish = true;
+					}
+					else if(_books[symbol].update(*rec))
+					{
+						doPublish = true;
+					}
+
+					if(doPublish && _reporter)
+					{
+						_reporter->publish(BookPtr(new Book(_books[symbol])));
 					}
 				}
 				else
@@ -492,7 +634,6 @@ public:
 
 	void push(const RecordPtr& rec)
 	{
-		cout << "MarketDataConsumer::push" << endl;
 		_incomingRecordsQueue.push(rec);
 	}
 
@@ -513,7 +654,6 @@ private:
 			RecordPtr record{nullptr};
 			if(_incomingRecordsQueue.pop(record))
 			{
-				cout << "Yeaah" << endl;
 				if(record)
 					multiplex(record);
 				else
@@ -566,12 +706,12 @@ public:
 
 		for(const string& file : inputFiles)
 		{
-			_feed.addFeed(InputReaderPtr(new FileInputReader(file)));
+			FeedPtr feed{new Feed(InputReaderPtr(new FileInputReader(file)))};
+			_feed.addFeed(std::move(feed));
 		}
 
 		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push, _consumer, placeholders::_1));
-		_feed.registerEndOfDayCB(std::bind(&MarketDataConsumer::feedEnded, _consumer));
-		cout << "MainApp" << endl;
+		//_feed.registerEndOfDayCB(std::bind(&MarketDataConsumer::feedEnded, _consumer));
 	}
 	~MainApp() {}
 	void start()
@@ -585,7 +725,7 @@ public:
 
 	}
 private:
-	ConsolidatedFeed 						_feed;
+	FeedManager 							_feed;
 	MarketDataConsumerPtr 					_consumer;
 };
 
