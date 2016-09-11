@@ -439,9 +439,15 @@ public:
 		const FeedID& feedid = record.Feedid();
 		if(_bookPerFeed.find(feedid)==_bookPerFeed.end())
 		{
+			// special case of not having any book yet!
+			if(_bookPerFeed.size()==0)
+			{
+				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+			}
+
 			_bookPerFeed.emplace(feedid, BookPtr(new Book(symbol, feedid)));
-			_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
-			_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+
 		}
 
 		_bookPerFeed[feedid]->update(record);

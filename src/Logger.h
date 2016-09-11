@@ -60,7 +60,7 @@ private:
 	BlockingQueue<std::string> _queue;
 	std::thread				   _flusherThread;
 	std::ofstream 			   _logFile;
-	const int				   _flushAfterCountMsg{1};
+	const int				   _flushAfterCountMsg{10};
 };
 
 #endif
