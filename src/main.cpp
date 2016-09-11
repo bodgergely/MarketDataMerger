@@ -824,6 +824,7 @@ public:
 	}
 	~BookGroupProcessor()
 	{
+		join();
 	}
 
 	void registerReporter(const ReporterPtr& reporter)
@@ -945,7 +946,6 @@ private:
 		for(auto& p : _processorPool)
 		{
 			p.send(nullptr);
-			p.join();
 		}
 		_feedEnded = true;
 	}
