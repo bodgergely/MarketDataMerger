@@ -87,19 +87,20 @@ inline bool operator>(const TimePoint& lhs, const TimePoint& rhs)
 
 
 
+typedef int FeedID;
 
 /*
  * time,symbol,bid,bid_size,ask,ask_size*/
 class Record
 {
 public:
-	Record(const string& line, const Tokenizer tokenizer)
+	Record(const string& line, const Tokenizer tokenizer, FeedID feedID) : _feedID(feedID)
 	{
 		LOG("parsing line: " + line);
 		_parseLine(line, tokenizer);
 	}
 
-
+	const FeedID     FeedID() const {return _feedID;}
 	const TimePoint& Time() const {return _time;}
 	const string&	 Symbol() const {return _symbol;}
 	double 			 Bid() const {return _bid;}
@@ -110,7 +111,7 @@ public:
 	std::string toString() const
 	{
 		stringstream ss;
-		ss << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
+		ss << FeedID() << "," << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
 		return ss.str();
 	}
 
@@ -161,6 +162,7 @@ private:
 
 
 private:
+	FeedID		_feedID;
 	TimePoint 	_time;
 	string 		_symbol;
 	double 		_bid;
@@ -179,63 +181,24 @@ class Side
 public:
 	Side() : _price(0.0), _qty(0) {}
 	Side(double price, unsigned int qty) : _price(price), _qty(qty) {}
-	virtual ~Side() {}
+	~Side() {}
 	double price() const {return _price;}
 	unsigned int qty() const {return _qty;}
-	TimePoint lastUpdate() const {return _lastUpdate;}
-	virtual bool update(const TimePoint& time, double price, unsigned int qty) = 0;
-protected:
-	TimePoint _lastUpdate;
-	double 	  _price;
+	void update(double price, unsigned int qty)
+	{
+		_price = price;
+		_qty = qty;
+	}
+private:
+	double 	  			 _price;
 	unsigned int	   	  _qty;
 };
 
-class Bid : public Side
-{
-public:
-	Bid() {}
-	Bid(double price, unsigned int qty) : Side(price, qty) {}
-	virtual ~Bid() {}
-	virtual bool update(const TimePoint& time, double price, unsigned int qty)
-	{
-		bool updated = false;
-		if(price > _price)
-		{
-			_price = price;
-			_qty = qty;
-			updated = true;
-		}
-		else if(price == _price && qty != _qty)
-		{
-			_qty = qty;
-			updated = true;
-		}
-		return updated;
-	}
-};
 
-class Ask : public Side
+enum SideEnum
 {
-public:
-	Ask() {}
-	Ask(double price, unsigned int qty) : Side(price, qty) {}
-	virtual ~Ask() {}
-	virtual bool update(const TimePoint& time, double price, unsigned int qty)
-	{
-		bool updated = false;
-		if(price < _price)
-		{
-			_price = price;
-			_qty = qty;
-			updated = true;
-		}
-		else if(price == _price && qty != _qty)
-		{
-			_qty = qty;
-			updated = true;
-		}
-		return updated;
-	}
+	Bid,
+	Ask
 };
 
 
@@ -243,35 +206,20 @@ public:
 class Book
 {
 public:
-	Book() {}
-	Book(const Book& other) : _symbol(other.Symbol()), _lastUpdate(other.LastUpdateTime()), _bid(other.bid()), _ask(other.ask())
-	{
-	}
-	Book(const Record& rec) : _symbol(rec.Symbol()), _lastUpdate(rec.Time()), _bid(rec.Bid(), rec.BidSize()), _ask(rec.Ask(), rec.AskSize())
-	{
-
-	}
-	Book(const string& symbol, const Bid& bid, const Ask& ask) :
-		_symbol(symbol), _bid(bid), _ask(ask) {}
+	Book(const string& symbol, const FeedID& feedID) : _symbol(symbol), _feedID(feedID){}
 	~Book() {}
-
 	//accessors
 	inline const string& Symbol() const {return _symbol;}
 	inline const TimePoint& LastUpdateTime() const {return _lastUpdate;}
-	inline const Bid& bid() const {return _bid;}
-	inline const Ask& ask() const {return _ask;}
+	inline const Side& bid() const {return _bid;}
+	inline const Side& ask() const {return _ask;}
 
-	bool update(const Record& record)
+	void update(const Record& record)
 	{
-		bool bidUpdated = _bid.update(record.Time(), record.Bid(), record.BidSize());
-		bool askUpated = _ask.update(record.Time(), record.Ask(), record.AskSize());
-		bool updated = bidUpdated || askUpated;
-		// update the _lastUpdate member in Book too
-		if(updated)
-		{
-			_lastUpdate = record.Time();
-		}
-		return updated;
+		assert(record.FeedID()==_feedID);
+		_lastUpdate = record.Time();
+		_bid.update(record.Bid(), record.BidSize());
+		_ask.update(record.Ask(), record.AskSize());
 	}
 
 	string toString() const
@@ -282,24 +230,324 @@ public:
 	}
 
 private:
-	string 	_symbol;
+	string 	  _symbol;
+	FeedID	  _feedID;
 	TimePoint _lastUpdate;
-	Bid 	_bid;
-	Ask 	_ask;
+	Side	  _bid;
+	Side	  _ask;
 };
-
-std::ostream& operator<<(std::ostream& os, const Book& book)
-{
-	const Bid& bid = book.bid();
-	const Ask& ask = book.ask();
-	os << book.LastUpdateTime().toString() << "," << book.Symbol() << "," << bid.price() << "," << bid.qty() << "," << ask.price() << "," << ask.qty();
-}
 
 
 typedef std::shared_ptr<Book> BookPtr;
 
 
-typedef unordered_map<string, Book> BookMap;
+class TopLevel
+{
+public:
+	TopLevel() {}
+	// accesseros
+	const Side& Bid() const {return _totalBid;}
+	const Side& Ask() const {return _totalAsk;}
+
+	unsigned int BidCount() const {return _bids.size();}
+	unsigned int AskCount() const {return _asks.size();}
+
+	void add(const FeedID& feedid, const Side& side, SideEnum s)
+	{
+		switch(s)
+		{
+		case SideEnum::Bid:
+			_bids[feedid] = side;
+			_removeStaleBids(side.price());
+			_calcBid();
+			break;
+		case SideEnum::Ask:
+			_asks[feedid] = side;
+			_removeStaleAsks(side.price());
+			_calcAsk();
+			break;
+		}
+	}
+
+	void remove(const FeedID& feedid, SideEnum s)
+	{
+		switch(s)
+		{
+		case SideEnum::Bid:
+			_bids.erase(feedid);
+			_calcBid();
+			break;
+		case SideEnum::Ask:
+			_asks.erase(feedid);
+			_calcAsk();
+			break;
+		}
+	}
+
+
+	bool feedInvolved(FeedID feedid, SideEnum s)
+	{
+		bool res = false;
+		switch(s)
+		{
+		case SideEnum::Bid:
+			if(_bids.find(feedid)!=_bids.end())
+				res = true;
+			break;
+		case SideEnum::Ask:
+			if(_asks.find(feedid)!=_asks.end())
+				res = true;
+			break;
+		}
+		return res;
+	}
+
+private:
+	// to maintain the invariant
+	void _removeStaleBids(double bestPrice)
+	{
+		vector<FeedID> staleIDs;
+		for(auto& p : _bids)
+		{
+			if(p.second.price() < bestPrice)
+				staleIDs.push_back(p.first);
+		}
+		for(FeedID& id : staleIDs)
+			_bids.erase(id);
+	}
+
+	void _removeStaleAsks(double bestPrice)
+	{
+		vector<FeedID> staleIDs;
+		for(auto& p : _asks)
+		{
+			if(p.second.price() > bestPrice)
+				staleIDs.push_back(p.first);
+		}
+		for(FeedID& id : staleIDs)
+			_asks.erase(id);
+	}
+
+
+
+	void _calcBid()
+	{
+		if(_bids.size()>0)
+		{
+			unsigned int qty = 0;
+			double price = _bids.begin()->second.price();
+			for(const auto& p : _bids)
+			{
+				assert(p.second.price() == price);
+				price = p.second.price();
+				qty += p.second.qty();
+			}
+			_totalBid = Side(price, qty);
+		}
+		else
+		{
+			_totalBid = Side(0.0, 0);
+		}
+
+	}
+
+	void _calcAsk()
+	{
+		if(_asks.size()>0)
+		{
+			unsigned int qty = 0;
+			double price = _asks.begin()->second.price();
+			for(const auto& p : _asks)
+			{
+				assert(p.second.price() == price);
+				price = p.second.price();
+				qty += p.second.qty();
+			}
+			_totalAsk = Side(price, qty);
+		}
+		else
+		{
+			_totalAsk = Side(0.0,0);
+		}
+	}
+
+
+private:
+	Side _totalBid;
+	Side _totalAsk;
+	unordered_map<FeedID, Side> _bids;
+	unordered_map<FeedID, Side> _asks;
+};
+
+
+
+class CompositeBook
+{
+public:
+	class CompositeTopLevel
+	{
+	public:
+		CompositeTopLevel(const Side& bid, const Side& ask, const TimePoint& lastUpdate) : _bid(bid), _ask(ask), _lastUpdate(lastUpdate) {}
+		const Side& Bid() const {return _bid;}
+		const Side& Ask() const {return _ask;}
+		const TimePoint& LastUpdate() const {return _lastUpdate;}
+	private:
+		Side _bid;
+		Side _ask;
+		const TimePoint _lastUpdate;
+	};
+	CompositeBook(const string& symbol) : _symbol(symbol) {}
+	~CompositeBook(){}
+
+	const TimePoint& LastUpdate() const { return _lastChangeTime; }
+	CompositeTopLevel getTopBook() const {return CompositeBook(_topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
+
+
+	bool update(const Record& record)
+	{
+		bool topChanged = false;
+		Side oldTopBid = _topLevel.Bid();
+		Side oldTopAsk = _topLevel.Ask();
+
+
+		 const string& symbol = record.Symbol();
+		const FeedID& feedid = record.FeedID();
+		if(_bookPerFeed.find(feedid)==_bookPerFeed.end())
+		{
+			_bookPerFeed.emplace(feedid, BookPtr(new Book(symbol, feedid)));
+			_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+			_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+		}
+
+		_bookPerFeed[feedid]->update(record);
+
+		bool didRemoveBid = false;
+		bool didRemoveAsk = false;
+
+		_mergeBid(feedid, record, didRemoveBid);
+		_mergeAsk(feedid, record, didRemoveAsk);
+
+		if(_topLevel.BidCount() == 0)
+			_tryReplaceBid();
+		if(_topLevel.AskCount() == 0)
+			_tryReplaceAsk();
+
+		if(_topLevel.Bid()!=oldTopBid || _topLevel.Ask()!=oldTopAsk)
+		{
+			_lastChangeTime = record.Time();
+			topChanged = true;
+		}
+
+		return topChanged;
+	}
+
+
+
+private:
+	void _tryReplaceBid()
+	{
+		vector<pair<FeedID,Side>> replacements;
+		double bestPrice = std::numeric_limits<double>::min();
+		for(auto& p : _bookPerFeed)
+		{
+			FeedID feedid = p.first;
+			const Side& bid = p.second->bid();
+			if(bid.price() > bestPrice)
+				bestPrice = bid.price();
+		}
+		// second pass
+		for(auto& p : _bookPerFeed)
+		{
+			FeedID feedid = p.first;
+			const Side& bid = p.second->bid();
+			if(bid.price() == bestPrice)
+				replacements.push_back(make_pair(feedid, bid));
+		}
+
+		for(auto& p : replacements)
+		{
+			_topLevel.add(p.first, p.second, SideEnum::Bid);
+		}
+
+
+	}
+
+	void _tryReplaceAsk()
+	{
+		vector<pair<FeedID,Side>> replacements;
+		double bestPrice = std::numeric_limits<double>::max();
+		for(auto& p : _bookPerFeed)
+		{
+			FeedID feedid = p.first;
+			const Side& ask = p.second->ask();
+			if(ask.price() < bestPrice)
+				bestPrice = ask.price();
+		}
+		// second pass
+		for(auto& p : _bookPerFeed)
+		{
+			FeedID feedid = p.first;
+			const Side& ask = p.second->ask();
+			if(ask.price() == bestPrice)
+				replacements.push_back(make_pair(feedid, ask));
+		}
+
+		for(auto& p : replacements)
+		{
+			_topLevel.add(p.first, p.second, SideEnum::Ask);
+		}
+	}
+
+
+	bool _mergeBid(const FeedID& feedid, const Record& record, bool& didRemove)
+	{
+		if(_topLevel.feedInvolved(feedid, SideEnum::Bid))
+		{
+			if(record.Bid() < _topLevel.Bid().price())
+			{
+				_topLevel.remove(feedid, SideEnum::Bid);
+				didRemove = true;
+			}
+			else
+				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+		}
+		else
+		{
+			if(record.Bid() >= _topLevel.Bid().price())
+				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+		}
+	}
+
+	bool _mergeAsk(const FeedID& feedid, const Record& record, bool& didRemove)
+	{
+		if(_topLevel.feedInvolved(feedid, SideEnum::Ask))
+		{
+			if(record.Ask() > _topLevel.Ask().price())
+			{
+				_topLevel.remove(feedid, SideEnum::Ask);
+				didRemove = true;
+			}
+			else
+				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+		}
+		else
+		{
+			if(record.Ask() <= _topLevel.Ask().price())
+				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+		}
+	}
+
+private:
+	string						   _symbol;
+	unordered_map<FeedID, BookPtr> _bookPerFeed;
+	TopLevel					   _topLevel;
+	TimePoint					   _lastChangeTime;
+	//BookStatistics				   _statistics;
+};
+
+
+
+typedef unordered_map<string, CompositeBook> CompositeBookMap;
 
 
 
@@ -308,7 +556,7 @@ typedef unordered_map<string, Book> BookMap;
 class Feed
 {
 public:
-	Feed(const InputReaderPtr& input) : _input(input), _cache(nullptr)
+	Feed(const InputReaderPtr& input, FeedID feedID) : _feedID(feedID), _input(input), _cache(nullptr)
 	{
 	}
 	~Feed() {}
@@ -322,7 +570,7 @@ public:
 			//cout << "Line read " << line << endl;
 			try
 			{
-				_cache = RecordPtr(new Record(line, tokenizer));
+				_cache = RecordPtr(new Record(line, tokenizer, _feedID));
 				return true;
 			}
 			catch(const Record::RecordInvalid& e)
@@ -342,6 +590,7 @@ public:
 
 	inline bool			 isValid() const {return _input->isValid();}
 protected:
+	FeedID			_feedID;
 	InputReaderPtr 	_input;
 	RecordPtr		_cache;
 };
@@ -600,7 +849,7 @@ private:
 
 private:
 	BlockingQueue<RecordPtr> _recordQueue;
-	BookMap 				 _books;
+	CompositeBookMap 		 _books;
 	std::thread 			 _processorThread;
 	ReporterPtr				 _reporter;
 };
@@ -704,10 +953,12 @@ public:
 													_consumer(new MarketDataConsumer(processingGroupCount, ReporterPtr(new StandardOutputReporter())))
 	{
 
+		FeedID feedid = 0;
 		for(const string& file : inputFiles)
 		{
-			FeedPtr feed{new Feed(InputReaderPtr(new FileInputReader(file)))};
+			FeedPtr feed{new Feed(InputReaderPtr(new FileInputReader(file)), feedid)};
 			_feed.addFeed(std::move(feed));
+			feedid++;
 		}
 
 		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push, _consumer, placeholders::_1));
