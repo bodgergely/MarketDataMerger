@@ -1098,6 +1098,7 @@ public:
 		_reporter->requestStop();
 		_reporter->join();
 
+		// report different statistics
 		_reportBookStatistics();
 
 
@@ -1106,7 +1107,7 @@ public:
 private:
 	void _reportBookStatistics()
 	{
-		cout << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
+		cout << "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
 		cout << "Reporting book statistics:\n";
 		cout << "\n";
 		unordered_map<string, BookStatistics> bookstats = _consumer->getBookStatistics();

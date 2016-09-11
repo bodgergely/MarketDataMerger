@@ -8,7 +8,8 @@
 #include <condition_variable>
 
 /*
- * Rather quickly "hacked together" blocking queue implementation
+ * Rather quickly "hacked together" blocking queue implementation - we could also experiment with a spin lock based queue on high frequency queues -
+ * or with concurrent queues where lowest latency is needed
  * */
 
 
