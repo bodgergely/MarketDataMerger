@@ -10,11 +10,22 @@
 #include <mutex>
 #include <condition_variable>
 #include <sstream>
+#include <cassert>
 
 #include "InputReader.h"
+#include "Tokenizer.h"
+#include "Logger.h"
+#include "Queue.h"
 
 
 using namespace std;
+
+
+Logger logger("/tmp/MarketDataMergerLog");
+
+
+#define LOG logger;
+
 
 class TimePoint
 {
@@ -67,29 +78,6 @@ inline bool operator<(const TimePoint& lhs, const TimePoint& rhs)
 }
 
 
-class Tokenizer
-{
-public:
-	Tokenizer(char separator) : _sep(separator) {}
-	~Tokenizer() {}
-	vector<string> tokenize(const string& line) const
-	{
-		size_t pos = 0;
-		vector<string> tokenz;
-		while(pos < line.size())
-		{
-			size_t fi = pos;
-			while(fi<line.size() && line[fi]!=_sep) ++fi;
-			tokenz.push_back(line.substr(pos, fi-pos));
-			pos = fi;
-		}
-		return tokenz;
-	}
-
-private:
-	char _sep;
-};
-
 /*
  * time,symbol,bid,bid_size,ask,ask_size*/
 class Record
@@ -97,20 +85,10 @@ class Record
 public:
 	Record(const string& line, const Tokenizer tokenizer)
 	{
-		parseLine(line, tokenizer);
+		LOG("parsing line: " + line);
+		_parseLine(line, tokenizer);
 	}
-	// might fail badly if the data structure is not correct
-	void parseLine(const string& line, const Tokenizer& tokenizer)
-	{
-		bool result = true;
-		vector<string> tokenz = tokenizer.tokenize(line);
-		_time = TimePoint(tokenz[0]);
-		_symbol = tokenz[1];
-		_bid = stod(tokenz[2]);
-		_bid_size = stoi(tokenz[3]);
-		_ask = stod(tokenz[4]);
-		_ask_size = stoi(tokenz[5]);
-	}
+
 
 	const TimePoint& Time() const {return _time;}
 	const string&	 Symbol() const {return _symbol;}
@@ -118,7 +96,6 @@ public:
 	unsigned int				 BidSize() const {return _bid_size;}
 	double 			 Ask() const {return _ask;}
 	unsigned int				 AskSize() const {return _ask_size;}
-
 
 	class TimeCompare
 	{
@@ -131,6 +108,20 @@ public:
 				return false;
 		}
 	};
+
+private:
+	// might fail badly if the data structure is not correct
+	void _parseLine(const string& line, const Tokenizer& tokenizer)
+	{
+		bool result = true;
+		vector<string> tokenz = tokenizer.tokenize(line);
+		_time = TimePoint(tokenz[0]);
+		_symbol = tokenz[1];
+		_bid = stod(tokenz[2]);
+		_bid_size = stoi(tokenz[3]);
+		_ask = stod(tokenz[4]);
+		_ask_size = stoi(tokenz[5]);
+	}
 
 
 private:
@@ -232,9 +223,12 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const Book& book)
 {
+	cout << "std::ostream& operator<<(std::ostream& os, const Book& book)" << endl;
 	const Bid& bid = book.bid();
 	const Ask& ask = book.ask();
+	cout << "std::ostream& operator<<(std::ostream& os, const Book& book)ewrewrwr" << endl;
 	os << book.LastUpdateTime().toString() << "," << book.Symbol() << "," << bid.price() << "," << bid.qty() << "," << ask.price() << "," << ask.qty();
+	cout << "Ever got here????" << endl;
 }
 
 
@@ -275,7 +269,8 @@ public:
 
 	void join()
 	{
-		_recordProducerThread.join();
+		if(_recordProducerThread.joinable())
+			_recordProducerThread.join();
 	}
 
 
@@ -303,12 +298,13 @@ private:
 							_recordQueue.push(record);
 							RecordPtr rec = _recordQueue.top();
 							// callback to consumer
+							cout << "Pushing into consumer queue" << endl;
 							_newRecordCB(rec);
 							_recordQueue.pop();
 						}
 						catch(const std::exception& e)
 						{
-
+							cout << "Failed to process record: " << line << endl;
 						}
 					}
 				}
@@ -337,53 +333,11 @@ private:
 };
 
 
-template<class T>
-class Queue
-{
-public:
-	Queue() {}
-	virtual ~Queue() {}
-	virtual void push(const T& val) = 0;
-	virtual T pop() = 0;	// return by value
-protected:
-	std::queue<T> _q;
-};
-
-template<class T>
-class BlockingQueue : public Queue<T>
-{
-public:
-	BlockingQueue() {}
-	virtual ~BlockingQueue(){}
-	virtual void push(const T& val)
-	{
-		std::unique_lock<std::mutex> lock(_m);
-		Queue<T>::_q.push(val);
-		_cv.notify_all();
-	}
-
-
-	virtual T pop()
-	{
-		std::unique_lock<std::mutex> lock(_m);
-		while(Queue<T>::_q.size()==0)
-			_cv.wait(lock);
-
-		T elem = Queue<T>::_q.front();
-		Queue<T>::_q.pop();
-		return std::move(elem);
-	}
-
-
-private:
-	std::mutex _m;
-	std::condition_variable _cv;
-};
 
 class Reporter
 {
 public:
-	Reporter()
+	Reporter() : _finished(false)
 	{
 		_consumerThread = std::thread(&Reporter::_processing, this);
 	}
@@ -391,7 +345,19 @@ public:
 
 	void	publish(const BookPtr& topOfBook)
 	{
-		_topOfBookChangedQueue.push(topOfBook);
+		std::lock_guard<std::mutex> lock(_mutex);
+		if(!_finished)
+		{
+			if(!topOfBook)
+				_finished = true;
+			_topOfBookChangedQueue.push(topOfBook);
+		}
+	}
+
+	void join()
+	{
+		if(_consumerThread.joinable())
+			_consumerThread.join();
 	}
 
 
@@ -403,10 +369,14 @@ private:
 	{
 		while(true)
 		{
-			cout << "Reporter::_processing\n" << endl;
-			BookPtr book = _topOfBookChangedQueue.pop();
-			if(book)
-				_report(book);
+			BookPtr book{nullptr};
+			if(_topOfBookChangedQueue.pop(book))
+			{
+				if(book)
+					_report(book);
+				else
+					break;
+			}
 			else
 				break;
 		}
@@ -414,6 +384,9 @@ private:
 private:
 	BlockingQueue<BookPtr> _topOfBookChangedQueue;
 	std::thread			  _consumerThread;
+	std::mutex			  _mutex;
+	bool				  _finished;
+
 };
 
 typedef shared_ptr<Reporter> ReporterPtr;
@@ -437,6 +410,11 @@ public:
 	{
 		_processorThread = std::thread(&BookGroupProcessor::_processing, this);
 	}
+	~BookGroupProcessor()
+	{
+		_reporter->publish(nullptr);
+		_reporter->join();
+	}
 
 	void registerReporter(const ReporterPtr& reporter)
 	{
@@ -445,29 +423,38 @@ public:
 
 	void send(const RecordPtr& rec) {_recordQueue.push(rec);}
 
-	void join() {_processorThread.join();}
+	void join()
+	{
+		if(_processorThread.joinable())
+			_processorThread.join();
+	}
 
 private:
 	void _processing()
 	{
 		while(true)
 		{
-			cout << "BookGroupProcessor::_processing\n" << endl;
-			RecordPtr rec =_recordQueue.pop();
-			if(rec)
+			RecordPtr rec{nullptr};
+			if(_recordQueue.pop(rec))
 			{
-				cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
-				const string& symbol = rec->Symbol();
-				if(_books[symbol].update(*rec))
+				if(rec)
 				{
-					if(_reporter)
-						_reporter->publish(BookPtr(new Book(_books[symbol])));
+					cout << "BookGroupProcessor::_processing...Got elem!\n" << endl;
+					const string& symbol = rec->Symbol();
+					if(_books[symbol].update(*rec))
+					{
+						if(_reporter)
+							_reporter->publish(BookPtr(new Book(_books[symbol])));
+					}
+				}
+				else
+				{
+					break;
 				}
 			}
 			else
-			{
 				break;
-			}
+
 		}
 	}
 
@@ -507,6 +494,7 @@ public:
 
 	void push(const RecordPtr& rec)
 	{
+		cout << "MarketDataConsumer::push" << endl;
 		_incomingRecordsQueue.push(rec);
 	}
 
@@ -515,7 +503,8 @@ public:
 
 	void join()
 	{
-		_multiplexerThread.join();
+		if(_multiplexerThread.joinable())
+			_multiplexerThread.join();
 	}
 
 private:
@@ -523,10 +512,15 @@ private:
 	{
 		while(true)
 		{
-			RecordPtr record = _incomingRecordsQueue.pop();
-			cout << "Yeaah" << endl;
-			if(record)
-				multiplex(record);
+			RecordPtr record{nullptr};
+			if(_incomingRecordsQueue.pop(record))
+			{
+				cout << "Yeaah" << endl;
+				if(record)
+					multiplex(record);
+				else
+					break;
+			}
 			else
 				break;
 		}
@@ -557,7 +551,7 @@ private:
 	BlockingQueue<RecordPtr> 							_incomingRecordsQueue;
 	vector<BookGroupProcessor> 		 		 			_processorPool;
 	thread					 							_multiplexerThread;
-	std::hash<std::string>									_hasher;
+	std::hash<std::string>								_hasher;
 };
 
 

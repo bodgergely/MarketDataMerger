@@ -10,8 +10,9 @@ ODIR=../obj
 LIBS=-lm
 
 
-cout: main.cpp
-	g++ $(CFLAGS_DEBUG) -o ../bin/mdm-g main.cpp 
+cout: main.cpp test.cpp
+	g++ $(CFLAGS_DEBUG) -o ../bin/mdm-g main.cpp
+	g++ $(CFLAGS_DEBUG) -o ../tests/test-driver-g test.cpp -lpthread -lgtest -lgtest_main
 
 .PHONY: clean
 
