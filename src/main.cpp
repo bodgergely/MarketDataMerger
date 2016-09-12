@@ -13,6 +13,7 @@
 #include <cassert>
 #include <algorithm>
 #include <locale>
+#include <chrono>
 
 #include "InputReader.h"
 #include "Tokenizer.h"
@@ -94,19 +95,21 @@ typedef int FeedID;
 class Record
 {
 public:
-	Record(const string& line, const Tokenizer tokenizer, FeedID feedID) : _feedID(feedID)
+	Record(const string& line, const Tokenizer tokenizer, FeedID feedID, const chrono::high_resolution_clock::time_point& timestamp) : _feedID(feedID), _receivedTime(timestamp)
 	{
 		LOG("parsing line: " + line);
 		_parseLine(line, tokenizer);
 	}
 
-	const FeedID&     Feedid() const {return _feedID;}
+	const FeedID&    Feedid() const {return _feedID;}
 	const TimePoint& Time() const {return _time;}
 	const string&	 Symbol() const {return _symbol;}
 	double 			 Bid() const {return _bid;}
-	unsigned int				 BidSize() const {return _bid_size;}
+	unsigned int     BidSize() const {return _bid_size;}
 	double 			 Ask() const {return _ask;}
-	unsigned int				 AskSize() const {return _ask_size;}
+	unsigned int     AskSize() const {return _ask_size;}
+
+	const chrono::high_resolution_clock::time_point& TimeStamp() const {return _receivedTime;}
 
 	std::string toString() const
 	{
@@ -169,11 +172,10 @@ private:
 	unsigned int 		_bid_size;
 	double  	_ask;
 	unsigned int		  	_ask_size;
+	chrono::high_resolution_clock::time_point _receivedTime;
 };
 
 using RecordPtr = std::shared_ptr<Record>;
-
-
 
 
 class Side
@@ -400,6 +402,14 @@ class BookStatistics
 public:
 	BookStatistics() {}
 	BookStatistics(const string& symbol) : _symbol(symbol) {}
+
+	void updateTopLevelChangeLatency(const chrono::high_resolution_clock::time_point& receiveTime)
+	{
+		increaseUpdateCount();
+		unsigned latency = chrono::duration_cast<chrono::microseconds>(chrono::high_resolution_clock::now() - receiveTime).count();
+		updateLatencyAverage(latency);
+	}
+
 	bool trySetBid(double p)
 	{
 		if(p < _minBid){
@@ -420,25 +430,82 @@ public:
 			return false;
 	}
 
-	void increaseUpdateCount() {++_updateCount;}
 
 	const string& Symbol() const {return _symbol;}
 	double MinBid() const {return _minBid;}
 	double MaxAsk() const {return _maxAsk;}
 	unsigned int UpdateCount() const {return _updateCount;}
+	//microsec
+	double		AvgUpdateTopBookLatency() const {return _avgUpdateLatency;}
+
+	void sortLatencies()
+	{
+		std::sort(_latencies.begin(), _latencies.end(), std::less<unsigned>());
+	}
+
+	unsigned MinLatency() const
+	{
+		if(_latencies.size() > 0)
+			return _latencies[0];
+		else
+			return 0;
+	}
+
+	unsigned MaxLatency() const
+	{
+		if(_latencies.size() > 0)
+			return _latencies[_latencies.size()-1];
+		else
+			return 0;
+	}
+
+	unsigned MedianLatency() const
+	{
+		if(_latencies.size() > 0)
+		{
+			size_t mi = _latencies.size() / 2;
+			return _latencies[mi];
+		}
+		else
+			return 0;
+	}
 
 	string toString() const
 	{
 		stringstream ss;
-		ss << "Symbol " << Symbol() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
+		// stupid place to do it but I am short on time
+
+		ss << "Symbol " << Symbol() << ",AvgUpdateLatency " << AvgUpdateTopBookLatency() << ",MinLatency " << MinLatency() << ",MaxLatency " << MaxLatency() << ",MedianLatency" << MedianLatency() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
 		return ss.str();
 	}
+
+private:
+
+	double updateLatencyAverage(double latency)
+	{
+		if(_avgUpdateLatency == 0.0)
+		{
+			_avgUpdateLatency = latency;
+		}
+		else
+		{
+			_avgUpdateLatency = _avgUpdateLatency + ((latency - _avgUpdateLatency)/_updateCount);
+		}
+		_latencies.push_back(latency);
+	}
+
+	inline void increaseUpdateCount() {++_updateCount;}
 
 private:
 	string		 _symbol;
 	double	 	 _minBid{std::numeric_limits<double>::max()};
 	double       _maxAsk{std::numeric_limits<double>::min()};
 	unsigned int _updateCount{0};
+	double	 	 _avgUpdateLatency{0.0};
+	unsigned	 _minLatency{std::numeric_limits<unsigned>::max()};
+	unsigned	 _maxLatency{0};
+	// for median, percentiles
+	vector<unsigned> _latencies;
 };
 
 
@@ -477,7 +544,7 @@ public:
 
 	BookStatistics getStatistics() const
 	{
-		std::lock_guard<std::mutex> lock(_statisticsMutex);
+		//std::lock_guard<std::mutex> lock(_statisticsMutex);
 		return _statistics;
 	}
 
@@ -488,7 +555,7 @@ public:
 		Side oldTopAsk = _topLevel.Ask();
 
 
-		 const string& symbol = record.Symbol();
+		const string& symbol = record.Symbol();
 		const FeedID& feedid = record.Feedid();
 		if(_bookPerFeed.find(feedid)==_bookPerFeed.end())
 		{
@@ -517,7 +584,7 @@ public:
 		{
 			_lastChangeTime = record.Time();
 			topChanged = true;
-			updateStats();
+			updateStats(record);
 		}
 
 		return topChanged;
@@ -526,10 +593,10 @@ public:
 
 
 private:
-	void updateStats()
+	void updateStats(const Record& record)
 	{
-		std::lock_guard<std::mutex> lock(_statisticsMutex);
-		_statistics.increaseUpdateCount();
+		//std::lock_guard<std::mutex> lock(_statisticsMutex);
+		_statistics.updateTopLevelChangeLatency(record.TimeStamp());
 		_statistics.trySetBid(_topLevel.Bid().price());
 		_statistics.trySetAsk(_topLevel.Ask().price());
 	}
@@ -630,7 +697,7 @@ private:
 	unordered_map<FeedID, BookPtr> _bookPerFeed;
 	TopLevel					   _topLevel;
 	TimePoint					   _lastChangeTime;
-	mutable	std::mutex			   _statisticsMutex;
+	//mutable	std::mutex			   _statisticsMutex;
 	BookStatistics				   _statistics;
 };
 
@@ -658,7 +725,7 @@ public:
 			//cout << "Line read " << line << endl;
 			try
 			{
-				_cache = RecordPtr(new Record(line, tokenizer, _feedID));
+				_cache = RecordPtr(new Record(line, tokenizer, _feedID, chrono::high_resolution_clock::now()));
 				return true;
 			}
 			catch(const Record::RecordInvalid& e)
@@ -1109,10 +1176,13 @@ private:
 	{
 		cout << "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
 		cout << "Reporting book statistics:\n";
+		cout << "Latency(microsec) on market update changing the top of the book.\n";
+		cout << "Latency(microsec) is measured from first reading the market data entry from one of the feeds until the point we updated the book.\n";
 		cout << "\n";
 		unordered_map<string, BookStatistics> bookstats = _consumer->getBookStatistics();
 		for(auto& p : bookstats)
 		{
+			p.second.sortLatencies();
 			cout << p.second.toString() << endl;
 		}
 		cout << "\nEnd of Book Statistics\n";
