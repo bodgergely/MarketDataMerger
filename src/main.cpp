@@ -475,7 +475,7 @@ public:
 		stringstream ss;
 		// stupid place to do it but I am short on time
 
-		ss << "Symbol " << Symbol() << ",AvgUpdateLatency " << AvgUpdateTopBookLatency() << ",MinLatency " << MinLatency() << ",MaxLatency " << MaxLatency() << ",MedianLatency" << MedianLatency() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
+		ss << "Symbol " << Symbol() << ",AvgUpdateLatency " << AvgUpdateTopBookLatency() << ",MinLatency " << MinLatency() << ",MaxLatency " << MaxLatency() << ",MedianLatency " << MedianLatency() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
 		return ss.str();
 	}
 
