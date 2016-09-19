@@ -1,5 +1,5 @@
 #ifndef _TOKENIZER_H
-#define _TOKNIZER_H
+#define _TOKENIZER_H
 
 #include <string>
 #include <vector>
