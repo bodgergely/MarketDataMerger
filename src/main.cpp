@@ -481,7 +481,7 @@ public:
 
 private:
 
-	double updateLatencyAverage(double latency)
+	void updateLatencyAverage(double latency)
 	{
 		if(_avgUpdateLatency == 0.0)
 		{
