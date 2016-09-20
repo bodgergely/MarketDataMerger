@@ -1,5 +1,5 @@
-#ifndef SPINNINGQUEUE_H
-#define SPINNINGQUEUE_H
+#ifndef _SPINNINGQUEUE_H
+#define _SPINNINGQUEUE_H
 
 #include <atomic>
 #include <queue>
@@ -45,7 +45,7 @@ public:
 				res = true;
 			}
 			_lock.unlock();
-			using namespace std;if(res)
+			if(res)
 				break;
 			else if(_stopRequested.load() == true)
 				return false;
