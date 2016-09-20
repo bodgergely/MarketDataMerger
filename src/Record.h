@@ -19,6 +19,17 @@ public:
 		_parseLine(line, tokenizer);
 	}
 
+	Record(const string& line, const Tokenizer tokenizer, FeedID feedID) : _feedID(feedID), _receivedTime(std::chrono::high_resolution_clock::now())
+	{
+		//LOG("parsing line: " + line);
+		_parseLine(line, tokenizer);
+	}
+
+	Record(const TimePoint& tp, const string& symbol, double bidPrice, uint bidSize, double askPrice, uint askSize, const FeedID& feedid) :
+			_symbol(symbol), _bid(bidPrice), _bid_size(bidSize), _ask(askPrice), _ask_size(askSize), _feedID(feedid), _time(tp), _receivedTime(std::chrono::high_resolution_clock::now())
+	{}
+
+
 	const FeedID&    Feedid() const {return _feedID;}
 	const TimePoint& Time() const {return _time;}
 	const string&	 Symbol() const {return _symbol;}

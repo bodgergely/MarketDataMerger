@@ -12,12 +12,16 @@ public:
 	TimePoint() : _valid(false)
 	{
 	}
-	explicit TimePoint(const string& time) : _valid(true)
+	TimePoint(const string& time) : TimePoint(time.c_str())
 	{
-		sscanf(time.c_str(), formatString,
-		    &vec[0],
-		    &vec[1],
-		    &vec[2],
+
+	}
+	TimePoint(const char* time) : _valid(true)
+	{
+		sscanf(time, formatString,
+			&vec[0],
+			&vec[1],
+			&vec[2],
 			&vec[3]);
 	}
 
