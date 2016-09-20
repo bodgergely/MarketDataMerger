@@ -2,7 +2,7 @@ IDIR =.
 GTESTIDIR =/home/geri/workspace/googletest/googletest/include
 GTESTLIB=/home/geri/workspace/googletest/build/googletest
 CC=g++
-CFLAGS_DEBUG=-I$(GTESTIDIR) -L$(GTESTLIB) -DDEBUG -pthread -g --std=c++11
+CFLAGS_DEBUG=-I$(GTESTIDIR) -L$(GTESTLIB) -DDEBUG -fsanitize=undefined -pthread -g --std=c++11
 CFLAGS=-I$(GTESTIDIR) -L$(GTESTLIB) -O2 -DNDEBUG -pthread --std=c++11
 
 ODIR=../obj
