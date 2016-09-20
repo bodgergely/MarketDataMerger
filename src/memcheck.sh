@@ -1,0 +1,1 @@
+valgrind --leak-check=full --show-leak-kinds=all -v ../bin/mdm ../../example_1/feed_a.csv ../../example_1/feed_b.csv
