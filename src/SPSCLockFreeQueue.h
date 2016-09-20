@@ -14,12 +14,12 @@ template<class T>
 class SPSCLockFreeQueue
 {
 public:
-	SPSCLockFreeQueue() : _head(new Node), _tail(_head->load()) {}
+	SPSCLockFreeQueue() : _head(new Node), _tail(_head.load()) {}
 	SPSCLockFreeQueue(const SPSCLockFreeQueue& ) = delete;
 	SPSCLockFreeQueue& operator=(const SPSCLockFreeQueue& ) = delete;
 	~SPSCLockFreeQueue()
 	{
-		while(const Node* oldHead = _head->load())
+		while(const Node* oldHead = _head.load())
 		{
 			_head.store(oldHead->_next);
 			delete oldHead;
@@ -29,7 +29,7 @@ public:
 	std::shared_ptr<T> pop()
 	{
 		Node* oldHead = popHead();
-		if(oldHead)
+		if(!oldHead)
 		{
 			return std::shared_ptr<T>();
 		}
@@ -42,7 +42,7 @@ public:
 	{
 		std::shared_ptr<T> newData(std::make_shared<T>(newValue));
 		Node* p = new Node;
-		const Node* oldTail = _tail.load();
+		Node* oldTail = _tail.load();
 		oldTail->_data.swap(newData);
 		oldTail->_next = p;
 		_tail.store(p);
@@ -58,7 +58,7 @@ private:
 
 	Node* popHead()
 	{
-		const Node* oldHead = _head.load();
+		Node* oldHead = _head.load();
 		if(oldHead == _tail.load())
 		{
 			return nullptr;
