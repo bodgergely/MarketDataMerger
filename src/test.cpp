@@ -90,7 +90,6 @@ TEST(ConsolidatedFeed, goodSequence)
 	while(record = cfeed.nextRecord())
 	{
 		recordCount++;
-		cout << *record << endl;
 		ASSERT_EQ(true, prevTime < record->Time());
 		prevTime = record->Time();
 	}

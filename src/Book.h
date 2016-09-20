@@ -419,12 +419,59 @@ public:
 			updateStats(record);
 		}
 
+		assert(checkConsistency());
+
 		return topChanged;
 	}
 
 
 
 private:
+	bool checkConsistency() const
+	{
+		Side topBid(0.0,0);
+		Side topAsk(numeric_limits<double>::max(), 0);
+		for(const auto& p : _bookPerFeed)
+		{
+			const BookPtr& book = p.second;
+			assert(book->Symbol() == _symbol);
+
+			const Side& bid = book->bid();
+			if(bid.price() >= topBid.price())
+			{
+				if(bid.price() == topBid.price())
+				{
+					topBid.update(bid.price(), topBid.qty() + bid.qty());
+				}
+				else
+				{
+					topBid.update(bid.price(), bid.qty());
+				}
+			}
+
+			const Side& ask = book->ask();
+			if(ask.price() <= topAsk.price())
+			{
+				if(ask.price() == topAsk.price())
+				{
+					topAsk.update(ask.price(), topAsk.qty() + ask.qty());
+				}
+				else
+				{
+					topAsk.update(ask.price(), ask.qty());
+				}
+			}
+		}
+
+		if(_topLevel.Bid() != topBid)
+			return false;
+		if(_topLevel.Ask() != topAsk)
+			return false;
+
+		return true;
+
+	}
+
 	void updateStats(const Record& record)
 	{
 		//std::lock_guard<std::mutex> lock(_statisticsMutex);
