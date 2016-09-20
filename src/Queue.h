@@ -102,6 +102,7 @@ public:
 			if(!_q.empty())
 			{
 				val = _q.front();
+				_q.pop();
 				res = true;
 			}
 			_lock.unlock();

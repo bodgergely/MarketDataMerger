@@ -103,7 +103,7 @@ private:
 private:
 	int													_numOfProcessors;
 	bool					 							_feedEnded;
-	BlockingQueue<RecordPtr> 							_incomingRecordsQueue;
+	SpinningQueue<RecordPtr> 							_incomingRecordsQueue;
 	vector<BookGroupProcessor> 		 		 			_processorPool;
 	thread					 							_multiplexerThread;
 	std::hash<std::string>								_hasher;
