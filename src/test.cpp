@@ -24,6 +24,124 @@ TEST(Tokenizer,tokenize)
 }
 
 
+class BlockingQueueTest : public testing::Test
+{
+public:
+	struct Foo
+	{
+		Foo() : a(0), b(0) {}
+		Foo(int a_, int b_) : a(a_), b(b_) {}
+		int a;
+		int b;
+	};
+
+	virtual void SetUp()
+	{
+
+	}
+
+	virtual void TearDown()
+	{
+		waitForResult();
+	}
+
+
+	void start()
+	{
+		for(int i=0;i<_producerCount;i++)
+			_producers.push_back(thread(&BlockingQueueTest::produce, this));
+
+		_consumer = thread(&BlockingQueueTest::consume, this);
+
+		_queueMonitor = thread(&BlockingQueueTest::monitorQueues, this);
+	}
+
+	void waitForResult()
+	{
+		for(int i=0;i<_producerCount;i++)
+		{
+			if(_producers[i].joinable())
+			{
+				_producers[i].join();
+			}
+		}
+
+		if(_queueMonitor.joinable())
+			_queueMonitor.join();
+
+		if(_consumer.joinable())
+			_consumer.join();
+
+	}
+
+	int getConsumedElementCount() const
+	{
+		return _consumedElementCount;
+	}
+
+protected:
+	void monitorQueues()
+	{
+		while(true)
+		{
+			this_thread::sleep_for(chrono::milliseconds(10));
+			int c = 0;
+			for(const thread& t : _producers)
+			{
+				if(t.joinable())
+				{
+					break;
+				}
+				else
+					c++;
+			}
+			if(c == _producers.size())
+				break;
+		}
+		_queue.requestStop();
+	}
+
+
+	void produce()
+	{
+		for(int i=0;i<_elemCount;i++)
+		{
+			_queue.push(Foo(i, i+1));
+		}
+	}
+
+	void consume()
+	{
+		while(true)
+		{
+			Foo val{};
+			if(_queue.pop(val))
+				_consumedElementCount++;
+			else
+				break;
+		}
+	}
+
+protected:
+	BlockingQueue<Foo> _queue;
+	vector<thread>     _producers;
+	thread			   _consumer;
+	thread			   _queueMonitor;
+	int				   _producerCount{5};
+	int				   _elemCount{100000};
+	int				   _consumedElementCount{0};
+
+};
+
+TEST_F(BlockingQueueTest, elemCount)
+{
+	start();
+	waitForResult();
+	int totalCount = getConsumedElementCount();
+	ASSERT_EQ(_producerCount*_elemCount, totalCount);
+}
+
+
 TEST(MockInputReader, data)
 {
 	vector<string> feed {"09:00:00.007,SPY,205.24,1138,205.25,406", "09:00:00.008,SPY,205.24,1138,205.25,406",
