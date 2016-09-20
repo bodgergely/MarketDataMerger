@@ -58,21 +58,32 @@ TEST(TimePoint, time)
 
 }
 
-TEST(ConsolidatedFeed, goodSequence)
+TEST(ConsolidatedFeed, sortByTimeStamp)
 {
-	vector<string> inputA {"09:00:00.007,SPY,205.24,1138,205.25,406",
+	vector<string> inputA {
+		"09:00:00.007,SPY,205.24,1138,205.25,406",
 		"09:00:00.008,EEM,39.2,49524,39.21,7413",
 		"09:00:00.008,SPY,205.24,400,205.25,1306",
 		"09:00:00.009,SPY,205.24,400,205.25,1306",
 		"09:00:00.010,SPY,205.24,400,205.25,1306",
 		"09:00:00.011,SPY,205.24,434,205.25,1306",
-		"09:00:00.011,SPY,205.24,436,205.25,1306"};
-	vector<string> inputB {"09:00:00.006,SPY,205.24,400,205.25,200",
+		"09:00:00.011,SPY,205.24,436,205.25,1306",
+		"09:00:00.012,SPY,205.24,436,205.25,1306"};
+	vector<string> inputB {
+		"09:00:00.006,SPY,205.24,400,205.25,200",
 		"09:00:00.008,EEM,39.2,20040,39.21,12100",
 		"09:00:00.008,IWM,117.07,3900,117.09,450",
 		"09:00:00.008,SPY,205.24,300,205.25,200",
 		"09:00:00.009,SPY,205.24,267,205.25,200",
 		"09:00:00.011,SPY,205.24,264,205.25,200"};
+
+	vector<string> inputC{
+		"09:00:00.009,SPY,205.24,400,205.25,200",
+		"09:00:00.011,EEM,39.2,20040,39.21,12100",
+		"09:00:00.011,IWM,117.07,3900,117.09,450",
+		"09:00:00.011,SPY,205.24,300,205.25,200",
+		"09:00:00.013,SPY,205.24,267,205.25,200",
+		"09:00:00.014,SPY,205.24,264,205.25,200"};
 
 	InputReaderPtr mockFeedA{InputReaderPtr(new MockInputReader{inputA})};
 	FeedPtr feed_a{FeedPtr(new Feed(mockFeedA, 0))};
@@ -80,9 +91,13 @@ TEST(ConsolidatedFeed, goodSequence)
 	InputReaderPtr mockFeedB{InputReaderPtr(new MockInputReader{inputB})};
 	FeedPtr feed_b{FeedPtr(new Feed(mockFeedB, 0))};
 
+	InputReaderPtr mockFeedC{InputReaderPtr(new MockInputReader{inputC})};
+	FeedPtr feed_c{FeedPtr(new Feed(mockFeedC, 0))};
+
 	ConsolidatedFeed cfeed;
 	cfeed.addFeed(feed_a);
 	cfeed.addFeed(feed_b);
+	cfeed.addFeed(feed_c);
 
 	RecordPtr record{nullptr};
 	TimePoint prevTime("09:00:00.000");
@@ -94,7 +109,7 @@ TEST(ConsolidatedFeed, goodSequence)
 		prevTime = record->Time();
 	}
 
-	ASSERT_EQ(inputA.size()+inputB.size(), recordCount);
+	ASSERT_EQ(inputA.size()+inputB.size()+inputC.size(), recordCount);
 }
 
 Tokenizer tokenizer(',');
