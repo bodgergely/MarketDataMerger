@@ -2,7 +2,7 @@
 #define _MARKETDATACONSUMER_H
 
 #include <vector>
-#include "Queue.h"
+#include "SpinningQueue.h"
 #include "Reporter.h"
 #include "BookGroupProcessor.h"
 #include "Book.h"
