@@ -3,6 +3,7 @@
 
 #include <thread>
 #include <unordered_map>
+#include <pthread.h>
 
 #include "Book.h"
 #include "Record.h"
@@ -19,6 +20,14 @@ public:
 	{
 		_processorThread = std::thread(&BookGroupProcessor::_processing, this);
 	}
+
+#ifdef __unix__
+	BookGroupProcessor(int schedulingPolicy, int threadPriority) : BookGroupProcessor()
+	{
+		_setScheduling(schedulingPolicy, threadPriority);
+	}
+#endif
+
 	~BookGroupProcessor()
 	{
 		join();
@@ -28,6 +37,13 @@ public:
 	{
 		_reporter = reporter;
 	}
+
+#ifdef __unix__
+	void setSchedulingPolicy(int schedulingPolicy, int threadPriority)
+	{
+		_setScheduling(schedulingPolicy, threadPriority);
+	}
+#endif
 
 	void send(const RecordPtr& rec) {_recordQueue.push(rec);}
 
@@ -41,6 +57,14 @@ public:
 
 private:
 
+#ifdef __unix__
+	void _setScheduling(int schedulingPolicy, int threadPriority)
+	{
+		sched_param sch_params;
+		sch_params.sched_priority = threadPriority;
+		pthread_setschedparam(_processorThread.native_handle(), schedulingPolicy, &sch_params);
+	}
+#endif
 
 	void _processing()
 	{
