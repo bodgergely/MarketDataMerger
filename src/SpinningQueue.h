@@ -20,6 +20,33 @@ private:
 	std::atomic_flag _flag;
 };
 
+/*
+ * probability spin lock
+ *
+ * */
+class spinlock2
+{
+public:
+	spinlock2() : _flag(false) {}
+	void lock()
+	{
+		bool val = true;
+		while(true)
+		{
+			while((val = _flag.load(std::memory_order_relaxed)));
+
+			if(_flag.compare_exchange_weak(val, true, std::memory_order_relaxed))
+				break;
+		}
+	}
+	void unlock()
+	{
+		_flag.store(false, std::memory_order_relaxed);
+	}
+private:
+	std::atomic<bool> _flag;
+};
+
 
 template<class T>
 class SpinningQueue
