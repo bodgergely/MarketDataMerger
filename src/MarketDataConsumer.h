@@ -18,26 +18,12 @@ public:
 	}
 	~MarketDataConsumer()
 	{
-		join();
 	}
 
-	void start()
+	void read(const RecordPtr rec)
 	{
-		_readerThread = std::thread(&MarketDataConsumer::reader, this);
-	}
-
-	void push(const RecordPtr& rec)
-	{
-		_incomingRecordsQueue.push(rec);
-	}
-
-	void feedEnded(){/*TODO*/}
-
-
-	void join()
-	{
-		if(_readerThread.joinable())
-			_readerThread.join();
+		if(rec)
+			update(rec);
 	}
 
 	const unordered_map<string, BookStatistics>& writeBookStatistics() const
@@ -49,24 +35,6 @@ public:
 	}
 
 private:
-	void reader()
-	{
-		while(true)
-		{
-			RecordPtr record{nullptr};
-			if(_incomingRecordsQueue.pop(record))
-			{
-				if(record)
-					update(record);
-				else
-					break;
-			}
-			else
-				break;
-		}
-		_feedEnded = true;
-	}
-
 
 	void update(const RecordPtr record)
 	{
@@ -91,8 +59,6 @@ private:
 
 private:
 	bool					 							_feedEnded;
-	SpinningQueue<RecordPtr> 							_incomingRecordsQueue;
-	thread												_readerThread;
 	CompositeBookMap 		 							_books;
 };
 

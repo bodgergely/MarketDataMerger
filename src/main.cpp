@@ -23,16 +23,12 @@ public:
 			_feed.addFeed(std::move(feed));
 			feedid++;
 		}
-		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::push, _consumer, placeholders::_1));
+		_feed.registerNewRecordCB(std::bind(&MarketDataConsumer::read, _consumer, placeholders::_1));
 	}
 	~MainApp() {}
 	void start()
 	{
-		_consumer->start();
 		_feed.start();
-		//loop until done
-		_feed.join();
-		_consumer->join();
 		// report different statistics
 	}
 

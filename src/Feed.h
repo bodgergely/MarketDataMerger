@@ -116,7 +116,7 @@ private:
 class FeedManager
 {
 public:
-	using NewRecordCB = std::function<void(const RecordPtr&)>;
+	using NewRecordCB = std::function<void(const RecordPtr)>;
 	using EndOfDayCB = std::function<void(void)>;
 	FeedManager() {}
 	~FeedManager() {}
@@ -132,13 +132,7 @@ public:
 	// should be called after registering the callbacks
 	void start()
 	{
-		_recordProducerThread = thread(&FeedManager::_process, this);
-	}
-
-	void join()
-	{
-		if(_recordProducerThread.joinable())
-			_recordProducerThread.join();
+		_process();
 	}
 
 
@@ -160,7 +154,6 @@ private:
 	ConsolidatedFeed				_consolidatedFeed;
 	NewRecordCB						_newRecordCB;
 	//EndOfDayCB						_endOfDayCB;
-	thread							_recordProducerThread;
 };
 
 #endif
