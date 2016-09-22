@@ -90,6 +90,7 @@ private:
 						if(_reporter)
 							_reporter->publish(top);
 					}
+					delete rec;
 
 				}
 				else

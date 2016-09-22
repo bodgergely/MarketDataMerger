@@ -111,6 +111,6 @@ ostream& operator<<(ostream& os, const Record& record)
 	return os;
 }
 
-using RecordPtr = std::shared_ptr<Record>;
+using RecordPtr = Record*;
 
 #endif
