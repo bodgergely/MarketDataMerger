@@ -13,7 +13,7 @@ Logger LOG("/tmp/MarketDataMergerLog");
 class MainApp
 {
 public:
-	MainApp(vector<string> inputFiles, int processingGroupCount) : _reporter(ReporterPtr(new StandardOutputReporter())),
+	MainApp(vector<string> inputFiles, int processingGroupCount) : _reporter(ReporterPtr(new KnowsAboutFeedsStandardOutputReporter(inputFiles.size()))),
 													_consumer(new MarketDataConsumer(processingGroupCount, _reporter))
 	{
 
@@ -69,6 +69,7 @@ private:
 
 int main(int argc, char** argv)
 {
+	auto start = chrono::system_clock::now();
 	vector<string> infiles;
 	for(int i=1;i<argc;i++)
 	{

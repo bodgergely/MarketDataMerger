@@ -77,9 +77,34 @@ public:
 protected:
 	virtual void _report(const CompositeBook::CompositeTopLevel& top)
 	{
-		cout << top.toString() << endl;
+		//cout << top.toString() << endl;
 	}
 };
 
+
+class KnowsAboutFeedsStandardOutputReporter : public StandardOutputReporter
+{
+public:
+	KnowsAboutFeedsStandardOutputReporter(int numOfFeeds) : StandardOutputReporter(), _numOfFeeds(numOfFeeds) {}
+	virtual ~KnowsAboutFeedsStandardOutputReporter()
+	{
+		requestStop();
+		join();
+	}
+protected:
+	virtual void _report(const CompositeBook::CompositeTopLevel& top)
+	{
+		if(top.Symbol() == "")
+		{
+			++_numOfFeedEnded;
+			if(_numOfFeedEnded == _numOfFeeds)
+				cout << "Done\n";
+		}
+		StandardOutputReporter::_report(top);
+	}
+private:
+	int _numOfFeeds;
+	int _numOfFeedEnded{0};
+};
 
 #endif

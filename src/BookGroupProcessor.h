@@ -94,6 +94,7 @@ private:
 				}
 				else
 				{
+					_reporter->publish(CompositeBook::CompositeTopLevel{});
 					break;
 				}
 			}
