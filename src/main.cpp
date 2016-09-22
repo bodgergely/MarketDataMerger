@@ -19,7 +19,7 @@ public:
 		FeedID feedid = 0;
 		for(const string& file : inputFiles)
 		{
-			FeedPtr feed{new Feed(InputReaderPtr(new FileInputReader(file)), feedid)};
+			FeedPtr feed{new Feed(new FileInputReader(file), feedid)};
 			_feed.addFeed(std::move(feed));
 			feedid++;
 		}
@@ -55,6 +55,8 @@ private:
 
 int main(int argc, char** argv)
 {
+	cout << "Record: " << sizeof(Record) << endl;
+	cout << "TimePoint: " << sizeof(TimePoint) << endl;
 	auto start = chrono::system_clock::now();
 	vector<string> infiles;
 	for(int i=1;i<argc;i++)

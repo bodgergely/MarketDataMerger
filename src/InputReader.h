@@ -101,7 +101,7 @@ private:
 
 };
 
-using InputReaderPtr = std::shared_ptr<InputReader>;
+using InputReaderPtr = InputReader*;
 
 
 

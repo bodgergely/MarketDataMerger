@@ -6,19 +6,22 @@
 
 using namespace std;
 
+
+
 class TimePoint
 {
 public:
-	TimePoint() : _valid(false)
+	TimePoint()
 	{
+
 	}
 	TimePoint(const string& time) : TimePoint(time.c_str())
 	{
 
 	}
-	TimePoint(const char* time) : _valid(true)
+	TimePoint(const char* time)
 	{
-		sscanf(time, formatString,
+		sscanf(time, timeFormatString,
 			&vec[0],
 			&vec[1],
 			&vec[2],
@@ -30,7 +33,7 @@ public:
 	inline int sec() const {return vec[2];}
 	inline int millisec() const {return vec[3];}
 
-	inline bool isValid() const {return _valid;}
+	inline bool isValid() const {return vec[0]!=0;}
 
 	// hacky but convenient for the time comparison method
 	inline const int* repr() const {return vec;}
@@ -38,14 +41,13 @@ public:
 	string toString() const
 	{
 		char buff[256] = {0};
-		snprintf(buff, sizeof(buff)-1, formatString, hr(), min(), sec(), millisec());
+		snprintf(buff, sizeof(buff)-1, timeFormatString, hr(), min(), sec(), millisec());
 		return buff;
 	}
 
 
 private:
-	constexpr static const char* formatString{"%02d:%02d:%02d.%03d"};
-	bool _valid;
+	constexpr static const char* timeFormatString{"%02d:%02d:%02d.%03d"};
 	int vec[4] = {0};
 };
 
