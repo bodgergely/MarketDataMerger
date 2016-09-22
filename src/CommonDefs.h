@@ -18,6 +18,8 @@
 #include <locale>
 #include <chrono>
 
+#include <boost/pool/singleton_pool.hpp>
+
 typedef int FeedID;
 
 

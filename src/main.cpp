@@ -8,13 +8,12 @@
 
 using namespace std;
 
-Logger LOG("/tmp/MarketDataMergerLog");
 
 class MainApp
 {
 public:
-	MainApp(vector<string> inputFiles, int processingGroupCount) : _reporter(ReporterPtr(new KnowsAboutFeedsStandardOutputReporter(inputFiles.size()))),
-													_consumer(new MarketDataConsumer(processingGroupCount, _reporter))
+	MainApp(vector<string> inputFiles, int processingGroupCount) : _consumer(new MarketDataConsumer)
+
 	{
 
 		FeedID feedid = 0;
@@ -34,33 +33,20 @@ public:
 		//loop until done
 		_feed.join();
 		_consumer->join();
-		_reporter->requestStop();
-		_reporter->join();
-
 		// report different statistics
-		_reportBookStatistics();
 	}
 
-private:
-	void _reportBookStatistics()
+	void reportBookStatistics()
 	{
 		cout << "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
 		cout << "Reporting book statistics:\n";
-		cout << "Latency(microsec) on market update changing the top of the book.\n";
-		cout << "Latency(microsec) is measured from first reading the market data entry from one of the feeds until the point we updated the book.\n";
-		cout << "\n";
-		unordered_map<string, BookStatistics> bookstats = _consumer->getBookStatistics();
-		for(auto& p : bookstats)
-		{
-			p.second.sortLatencies();
-			cout << p.second.toString() << endl;
-		}
+		_consumer->writeBookStatistics();
 		cout << "\nEnd of Book Statistics\n";
 		cout << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
 	}
 
+
 private:
-	ReporterPtr								_reporter;
 	FeedManager 							_feed;
 	MarketDataConsumerPtr 					_consumer;
 };
@@ -78,6 +64,14 @@ int main(int argc, char** argv)
 
 	MainApp app(infiles, 6);
 	app.start();
+	auto feedProcessedTimePoint = chrono::system_clock::now();
+	app.reportBookStatistics();
+	auto statsReportedTimePoint = chrono::system_clock::now();
+
+	cout << "Timings:\n";
+	cout << "Until last record update: " << chrono::duration_cast<chrono::milliseconds>(feedProcessedTimePoint - start).count() <<
+			" (millisecs), Book stats write to cout: " << chrono::duration_cast<chrono::microseconds>(statsReportedTimePoint - feedProcessedTimePoint).count() <<
+			" (microsecs), Total time: " << chrono::duration_cast<chrono::milliseconds>(statsReportedTimePoint - start).count() << " (millisecs)\n";
 
 	return 0;
 }

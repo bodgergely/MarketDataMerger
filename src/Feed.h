@@ -8,7 +8,6 @@
 
 using namespace std;
 
-
 class Feed
 {
 public:
@@ -26,10 +25,12 @@ public:
 			//cout << "Line read " << line << endl;
 			try
 			{
-				_cache = RecordPtr(new Record(line, tokenizer, _feedID, chrono::high_resolution_clock::now()));
+				RecordPtr rec = (Record*)RecordMemPool::malloc();
+				initRecord(rec, line, tokenizer, _feedID);
+				_cache = rec;
 				return true;
 			}
-			catch(const Record::RecordInvalid& e)
+			catch(const RecordInvalid& e)
 			{
 				//LOG("record invalid exception:" + string(e.what()) + "End of line");
 				//cout << "record invalid exception:" << string(e.what()) << "End of line" << endl;
@@ -41,7 +42,7 @@ public:
 
 
 	}
-	const RecordPtr&	 cache() const {return _cache;}
+	const RecordPtr  	 cache() const {return _cache;}
 	void				 clearCache() { _cache = nullptr; }
 
 	inline bool			 isValid() const {return _input->isValid();}
@@ -74,12 +75,12 @@ public:
 				TimePoint time;
 				if(feed->cache()!=nullptr)
 				{
-					time = feed->cache()->Time();
+					time = feed->cache()->time;
 				}
 				else
 				{
 					if(feed->readNextRecordToCache())
-						time = feed->cache()->Time();
+						time = feed->cache()->time;
 				}
 
 				if(!oldestTime.isValid())

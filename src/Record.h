@@ -8,109 +8,104 @@
 
 using namespace std;
 
-/*
- * time,symbol,bid,bid_size,ask,ask_size*/
-class Record
+
+struct Record
+{
+	double 		bid;
+	double  	ask;
+	char 		symbol[8];
+	TimePoint 	time;
+	FeedID		feedID;
+	unsigned int bid_size;
+	unsigned int ask_size;
+};
+
+using RecordPtr = Record*;
+
+inline std::string toString(const Record& record)
+{
+	stringstream ss;
+	ss << record.feedID << "," << record.time.toString() << "," << record.symbol << "," << record.bid << "," << record.bid_size << "," << record.ask << "," << record.ask_size;
+	return ss.str();
+}
+
+class RecordInvalid : public std::exception
 {
 public:
-	Record(const string& line, const Tokenizer tokenizer, FeedID feedID, const chrono::high_resolution_clock::time_point& timestamp) : _feedID(feedID), _receivedTime(timestamp)
+	RecordInvalid(const std::string& line) : _line(line) {}
+	virtual const char* what() const noexcept
 	{
-		//LOG("parsing line: " + line);
-		_parseLine(line, tokenizer);
+		return _line.c_str();
 	}
-
-	Record(const string& line, const Tokenizer tokenizer, FeedID feedID) : _feedID(feedID), _receivedTime(std::chrono::high_resolution_clock::now())
-	{
-		//LOG("parsing line: " + line);
-		_parseLine(line, tokenizer);
-	}
-
-	Record(const TimePoint& tp, const string& symbol, double bidPrice, uint bidSize, double askPrice, uint askSize, const FeedID& feedid) :
-			_symbol(symbol), _bid(bidPrice), _bid_size(bidSize), _ask(askPrice), _ask_size(askSize), _feedID(feedid), _time(tp), _receivedTime(std::chrono::high_resolution_clock::now())
-	{}
-
-
-	const FeedID&    Feedid() const {return _feedID;}
-	const TimePoint& Time() const {return _time;}
-	const string&	 Symbol() const {return _symbol;}
-	double 			 Bid() const {return _bid;}
-	unsigned int     BidSize() const {return _bid_size;}
-	double 			 Ask() const {return _ask;}
-	unsigned int     AskSize() const {return _ask_size;}
-
-	const chrono::high_resolution_clock::time_point& TimeStamp() const {return _receivedTime;}
-
-	std::string toString() const
-	{
-		stringstream ss;
-		ss << Feedid() << "," << Time().toString() << "," << Symbol() << "," << Bid() << "," << BidSize() << "," << Ask() << "," << AskSize();
-		return ss.str();
-	}
-
-
-	class TimeCompare
-	{
-	public:
-		bool operator()(const std::shared_ptr<Record> a,std::shared_ptr<Record> b)
-		{
-			if(a->Time() < b->Time())
-				return true;
-			else
-				return false;
-		}
-	};
-
-	class RecordInvalid : public std::exception
-	{
-	public:
-		RecordInvalid(const std::string& line) : _line(line) {}
-		virtual const char* what() const noexcept
-		{
-			return _line.c_str();
-		}
-	private:
-		const std::string _line;
-	};
-
 private:
-	// might fail badly if the data structure is not correct
-	void _parseLine(const string& line, const Tokenizer& tokenizer)
-	{
-		bool result = true;
-		_sanityCheck(line);
-		vector<string> tokenz = tokenizer.tokenize(line);
-		_time = TimePoint(tokenz[0]);
-		_symbol = tokenz[1];
-		_bid = stod(tokenz[2]);
-		_bid_size = stoi(tokenz[3]);
-		_ask = stod(tokenz[4]);
-		_ask_size = stoi(tokenz[5]);
-	}
-
-	void _sanityCheck(const string& line)
-	{
-		if(line.size() == 0 || isspace(line[0]))
-			throw RecordInvalid(line);
-	}
-
-
-private:
-	FeedID		_feedID;
-	TimePoint 	_time;
-	string 		_symbol;
-	double 		_bid;
-	unsigned int 		_bid_size;
-	double  	_ask;
-	unsigned int		  	_ask_size;
-	chrono::high_resolution_clock::time_point _receivedTime;
+	const std::string _line;
 };
+
+
+void _sanityCheck(const string& line)
+{
+	if(line.size() == 0 || isspace(line[0]))
+		throw RecordInvalid(line);
+}
+
+// might fail badly if the data structure is not correct
+void _parseLine(RecordPtr rec, const string& line, const Tokenizer& tokenizer)
+{
+	bool result = true;
+	_sanityCheck(line);		//TODO
+	vector<string> tokenz = tokenizer.tokenize(line);  // TODO
+	rec->time = TimePoint(tokenz[0]);
+	strcpy(rec->symbol, tokenz[1].c_str());	//TODO
+	rec->bid = stod(tokenz[2]);
+	rec->bid_size = stoi(tokenz[3]);
+	rec->ask = stod(tokenz[4]);
+	rec->ask_size = stoi(tokenz[5]);
+}
+
+void initRecord(RecordPtr rec, const string& line, const Tokenizer& tokenizer, FeedID feedID)
+{
+	rec->symbol;
+	rec->feedID = feedID;
+	_parseLine(rec, line, tokenizer);
+}
+
+void initRecord(RecordPtr rec, const TimePoint& tp, const char* symbol_, double bidPrice, uint bidSize, double askPrice, uint askSize, const FeedID& feedid_)
+{
+	rec->bid = bidPrice;
+	rec->ask = askPrice;
+	strcpy(rec->symbol, symbol_);
+	rec->time = tp;
+	rec->feedID = feedid_;
+	rec->bid_size = bidSize;
+	rec->ask_size = askSize;
+}
+
+
 
 ostream& operator<<(ostream& os, const Record& record)
 {
-	os << record.toString();
+	os << toString(record);
 	return os;
 }
 
-using RecordPtr = Record*;
+
+
+class TimeCompare
+{
+public:
+	inline bool operator()(const RecordPtr a, const RecordPtr b)
+	{
+		if(a->time < b->time)
+			return true;
+		else
+			return false;
+	}
+};
+
+
+struct RecordPoolTag { };
+typedef boost::singleton_pool<RecordPoolTag, sizeof(Record)> RecordMemPool;
+
+
 
 #endif

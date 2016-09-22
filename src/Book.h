@@ -63,12 +63,12 @@ public:
 	inline const Side& bid() const {return _bid;}
 	inline const Side& ask() const {return _ask;}
 
-	void update(const Record& record)
+	void update(const RecordPtr record)
 	{
-		assert(record.Feedid()==_feedID);
-		_lastUpdate = record.Time();
-		_bid.update(record.Bid(), record.BidSize());
-		_ask.update(record.Ask(), record.AskSize());
+		assert(record->feedID==_feedID);
+		_lastUpdate = record->time;
+		_bid.update(record->bid, record->bid_size);
+		_ask.update(record->ask, record->ask_size);
 	}
 
 	string toString() const
@@ -87,7 +87,7 @@ private:
 };
 
 
-typedef std::shared_ptr<Book> BookPtr;
+typedef Book* BookPtr;
 
 
 class TopLevel
@@ -374,28 +374,28 @@ public:
 	const TimePoint& LastUpdate() const { return _lastChangeTime; }
 	CompositeTopLevel getTopBook() const {return CompositeBook::CompositeTopLevel(_symbol, _topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
 
-	BookStatistics getStatistics() const
+	const BookStatistics& getStatistics() const
 	{
 		//std::lock_guard<std::mutex> lock(_statisticsMutex);
 		return _statistics;
 	}
 
-	bool update(const Record& record)
+	bool update(const RecordPtr record)
 	{
 		bool topChanged = false;
 		Side oldTopBid = _topLevel.Bid();
 		Side oldTopAsk = _topLevel.Ask();
 
 
-		const string& symbol = record.Symbol();
-		const FeedID& feedid = record.Feedid();
+		const string& symbol = record->symbol;
+		const FeedID& feedid = record->feedID;
 		if(_bookPerFeed.find(feedid)==_bookPerFeed.end())
 		{
 			// special case of not having any book yet!
 			if(_bookPerFeed.size()==0)
 			{
-				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
-				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+				_topLevel.add(feedid, Side(record->bid, record->bid_size), SideEnum::Bid);
+				_topLevel.add(feedid, Side(record->ask, record->ask_size), SideEnum::Ask);
 			}
 
 			_bookPerFeed.emplace(feedid, BookPtr(new Book(symbol, feedid)));
@@ -414,7 +414,7 @@ public:
 
 		if(_topLevel.Bid()!=oldTopBid || _topLevel.Ask()!=oldTopAsk)
 		{
-			_lastChangeTime = record.Time();
+			_lastChangeTime = record->time;
 			topChanged = true;
 			updateStats(record);
 		}
@@ -472,10 +472,9 @@ private:
 
 	}
 
-	void updateStats(const Record& record)
+	void updateStats(const RecordPtr record)
 	{
 		//std::lock_guard<std::mutex> lock(_statisticsMutex);
-		_statistics.updateTopLevelChangeLatency(record.TimeStamp());
 		_statistics.trySetBid(_topLevel.Bid().price());
 		_statistics.trySetAsk(_topLevel.Ask().price());
 	}
@@ -535,39 +534,39 @@ private:
 	}
 
 
-	void _mergeBid(const FeedID& feedid, const Record& record)
+	void _mergeBid(const FeedID& feedid, const RecordPtr& record)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Bid))
 		{
-			if(record.Bid() < _topLevel.Bid().price())
+			if(record->bid < _topLevel.Bid().price())
 			{
 				_topLevel.remove(feedid, SideEnum::Bid);
 			}
 			else
-				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+				_topLevel.add(feedid, Side(record->bid, record->bid_size), SideEnum::Bid);
 		}
 		else
 		{
-			if(record.Bid() >= _topLevel.Bid().price())
-				_topLevel.add(feedid, Side(record.Bid(), record.BidSize()), SideEnum::Bid);
+			if(record->bid >= _topLevel.Bid().price())
+				_topLevel.add(feedid, Side(record->bid, record->bid_size), SideEnum::Bid);
 		}
 	}
 
-	void _mergeAsk(const FeedID& feedid, const Record& record)
+	void _mergeAsk(const FeedID& feedid, const RecordPtr& record)
 	{
 		if(_topLevel.feedInvolved(feedid, SideEnum::Ask))
 		{
-			if(record.Ask() > _topLevel.Ask().price())
+			if(record->ask > _topLevel.Ask().price())
 			{
 				_topLevel.remove(feedid, SideEnum::Ask);
 			}
 			else
-				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+				_topLevel.add(feedid, Side(record->ask, record->ask_size), SideEnum::Ask);
 		}
 		else
 		{
-			if(record.Ask() <= _topLevel.Ask().price())
-				_topLevel.add(feedid, Side(record.Ask(), record.AskSize()), SideEnum::Ask);
+			if(record->ask <= _topLevel.Ask().price())
+				_topLevel.add(feedid, Side(record->ask, record->ask_size), SideEnum::Ask);
 		}
 	}
 
@@ -591,8 +590,8 @@ bool operator!=(const CompositeBook::CompositeTopLevel& lhs, const CompositeBook
 }
 
 
-
-typedef std::shared_ptr<CompositeBook> CompositeBookPtr;
+typedef CompositeBook*	CompositeBookPtr;
 typedef unordered_map<string, CompositeBookPtr> CompositeBookMap;
+typedef unordered_map<string, BookStatistics> BookStatisticsMap;
 
 #endif

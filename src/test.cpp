@@ -223,8 +223,8 @@ TEST(ConsolidatedFeed, sortByTimeStamp)
 	while(record = cfeed.nextRecord())
 	{
 		recordCount++;
-		ASSERT_EQ(true, prevTime < record->Time());
-		prevTime = record->Time();
+		ASSERT_EQ(true, prevTime < record->time);
+		prevTime = record->time;
 	}
 
 	ASSERT_EQ(inputA.size()+inputB.size()+inputC.size(), recordCount);
@@ -241,25 +241,33 @@ TEST(CompositeBook, noCross)
 	FeedID idB = 1;
 	FeedID idC = 2;
 
-	vector<Record> records{	Record("10:00:00.000", symbol, 205.12, 500, 205.13, 200, idA),
-							Record("10:00:00.001", symbol, 205.12, 600, 205.14, 200, idB),
-							Record("10:00:00.001", symbol, 205.11, 300, 205.14, 200, idC),			//should not change top
-							Record("10:00:00.001", symbol, 205.11, 320, 205.14, 200, idB),			//should change top as idB pulls out from the best level total qty
-							Record("10:00:00.002", symbol, 205.10, 200, 205.13, 200, idA),			// should change top of bid to the above for idB and idC becomes best
-							Record("10:00:00.002", symbol, 205.09, 200, 205.13, 200, idA),			// should not change
-							Record("10:00:00.003", symbol, 205.09, 400, 205.13, 200, idC),			// should change
-							Record("10:00:00.003", symbol, 205.09, 400, 205.14, 1200, idA),
-							Record("10:00:00.004", symbol, 205.09, 250, 205.15, 600, idC),
-							Record("10:00:00.005", symbol, 205.10, 120, 205.13, 70, idB),
-							Record("10:00:00.005", symbol, 205.08, 220, 205.15, 90, idB),
-							Record("10:00:00.005", symbol, 205.08, 120, 205.13, 40, idA),
-							Record("10:00:00.005", symbol, 205.11, 20, 205.15, 70, idA),
-							Record("10:00:00.005", symbol, 205.09, 60, 205.16, 40, idA),
-							Record("10:00:00.005", symbol, 205.08, 240, 205.15, 90, idB),
-							Record("10:00:00.004", symbol, 205.10, 150, 205.16, 400, idC),
-							Record("10:00:00.004", symbol, 205.10, 150, 205.16, 450, idC),
-							Record("10:00:00.005", symbol, 205.10, 140, 205.13, 60, idB)
-						  };
+	RecordPtr recPtr = NULL;
+	vector<RecordPtr> records;
+	for(int i=0;i<18;i++)
+	{
+	  recPtr = (Record*)RecordMemPool::malloc();
+	  records.push_back(recPtr);
+	}
+
+	initRecord(records[0],"10:00:00.000", symbol.c_str(), 205.12, 500, 205.13, 200, idA);
+	initRecord(records[1],"10:00:00.001", symbol.c_str(), 205.12, 600, 205.14, 200, idB);
+	initRecord(records[2],"10:00:00.001", symbol.c_str(), 205.11, 300, 205.14, 200, idC);
+	initRecord(records[3],"10:00:00.001", symbol.c_str(), 205.11, 320, 205.14, 200, idB);
+	initRecord(records[4],"10:00:00.002", symbol.c_str(), 205.10, 200, 205.13, 200, idA);
+	initRecord(records[5],"10:00:00.002", symbol.c_str(), 205.09, 200, 205.13, 200, idA);
+	initRecord(records[6],"10:00:00.003", symbol.c_str(), 205.09, 400, 205.13, 200, idC);
+	initRecord(records[7],"10:00:00.003", symbol.c_str(), 205.09, 400, 205.14, 1200, idA);
+	initRecord(records[8],"10:00:00.004", symbol.c_str(), 205.09, 250, 205.15, 600, idC);
+	initRecord(records[9],"10:00:00.005", symbol.c_str(), 205.10, 120, 205.13, 70, idB);
+	initRecord(records[10],"10:00:00.005", symbol.c_str(), 205.08, 220, 205.15, 90, idB);
+	initRecord(records[11],"10:00:00.005", symbol.c_str(), 205.08, 120, 205.13, 40, idA);
+	initRecord(records[12],"10:00:00.005", symbol.c_str(), 205.11, 20, 205.15, 70, idA);
+	initRecord(records[13],"10:00:00.005", symbol.c_str(), 205.09, 60, 205.16, 40, idA);
+	initRecord(records[14],"10:00:00.005", symbol.c_str(), 205.08, 240, 205.15, 90, idB);
+	initRecord(records[15],"10:00:00.004", symbol.c_str(), 205.10, 150, 205.16, 400, idC);
+	initRecord(records[16],"10:00:00.004", symbol.c_str(), 205.10, 150, 205.16, 450, idC);
+	initRecord(records[17],"10:00:00.005", symbol.c_str(), 205.10, 140, 205.13, 60, idB);
+
 
 	ASSERT_EQ(true, cbook.update(records[0]));	// first entry
 	top = cbook.getTopBook();
@@ -376,10 +384,17 @@ TEST(CompositeBook, arbitrage)
 	FeedID idB = 1;
 	FeedID idC = 2;
 
-	vector<Record> records{	Record("10:00:00.000", symbol, 205.09, 60, 205.16, 40, idA),
-							Record("10:00:00.001", symbol, 205.10, 140, 205.13, 60, idB),
-							Record("10:00:00.001", symbol, 205.10, 150, 205.16, 450, idC)
-						  };
+	RecordPtr recPtr = NULL;
+	vector<RecordPtr> records;
+	for(int i=0;i<3;i++)
+	{
+	  recPtr = (Record*)RecordMemPool::malloc();
+	  records.push_back(recPtr);
+	}
+
+	initRecord(records[0],"10:00:00.000", symbol.c_str(), 205.09, 60, 205.16, 40, idA);
+	initRecord(records[1],"10:00:00.001", symbol.c_str(), 205.10, 140, 205.13, 60, idB);
+	initRecord(records[2],"10:00:00.001", symbol.c_str(), 205.10, 150, 205.16, 450, idC);
 
 	cbook.update(records[0]);
 	cbook.update(records[1]);
@@ -389,41 +404,59 @@ TEST(CompositeBook, arbitrage)
 	ASSERT_EQ(Side(205.10, 290), top.Bid());
 	ASSERT_EQ(Side(205.13, 60), top.Ask());
 
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[3],"10:00:00.002", symbol.c_str(), 205.13, 40, 205.15, 80, idC);
 	// let's do some arbitrage
-	records.push_back(Record("10:00:00.002", symbol, 205.13, 40, 205.15, 80, idC));
 
 	ASSERT_EQ(true, cbook.update(records[3]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.13, 40), top.Bid());
 	ASSERT_EQ(Side(205.13, 60), top.Ask());
 
-	records.push_back(Record("10:00:00.003", symbol, 205.14, 20, 205.15, 120, idC));
+
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[4],"10:00:00.003", symbol.c_str(), 205.14, 20, 205.15, 120, idC);
 
 	ASSERT_EQ(true, cbook.update(records[4]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.14, 20), top.Bid());
 	ASSERT_EQ(Side(205.13, 60), top.Ask());
 
-	records.push_back(Record("10:00:00.003", symbol, 205.14, 70, 205.15, 80, idA));
+
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[5],"10:00:00.003", symbol.c_str(), 205.14, 70, 205.15, 80, idA);
+
 
 	ASSERT_EQ(true, cbook.update(records[5]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.14, 90), top.Bid());
 	ASSERT_EQ(Side(205.13, 60), top.Ask());
 
-	records.push_back(Record("10:00:00.003", symbol, 205.14, 25, 205.16, 40, idB));
+
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[6],"10:00:00.003", symbol.c_str(), 205.14, 25, 205.16, 40, idB);
 	ASSERT_EQ(true, cbook.update(records[6]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.14, 115), top.Bid());
 	ASSERT_EQ(Side(205.15, 200), top.Ask());
 
-	records.push_back(Record("10:00:00.004", symbol, 205.12, 10, 205.13, 70, idB));
+
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[7],"10:00:00.004", symbol.c_str(), 205.12, 10, 205.13, 70, idB);
 	ASSERT_EQ(true, cbook.update(records[7]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.14, 90), top.Bid());
 	ASSERT_EQ(Side(205.13, 70), top.Ask());
 
-	records.push_back(Record("10:00:00.004", symbol, 205.13, 15, 205.16, 40, idB));
+	recPtr = (Record*)RecordMemPool::malloc();
+	records.push_back(recPtr);
+	initRecord(records[8],"10:00:00.004", symbol.c_str(), 205.13, 15, 205.16, 40, idB);
+
 	ASSERT_EQ(true, cbook.update(records[8]));
 	top = cbook.getTopBook();
 	ASSERT_EQ(Side(205.14, 90), top.Bid());
