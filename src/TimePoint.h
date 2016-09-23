@@ -15,13 +15,12 @@ public:
 	{
 
 	}
-	TimePoint(const char* time)
+	TimePoint(char* time)
 	{
-		sscanf(time, timeFormatString,
-			&vec[0],
-			&vec[1],
-			&vec[2],
-			&vec[3]);
+		time[2] = '0';
+		time[5] = '0';
+		time[8] = '0';
+		parse(time);
 	}
 
 	inline int hr() const {return vec[0];}
@@ -33,6 +32,14 @@ public:
 
 	// hacky but convenient for the time comparison method
 	inline const int* repr() const {return vec;}
+
+	inline void parse(const char* time)
+	{
+		vec[0] = atoi(time);
+		vec[1] = atoi(time+3);
+		vec[2] = atoi(time + 6);
+		vec[3] = atoi(time + 9);
+	}
 
 	string toString() const
 	{

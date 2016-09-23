@@ -71,8 +71,7 @@ void _parseLine(RecordPtr rec, char* line, char separator)
 	_sanityCheck(line);		//TODO
 	_splitLine(line, separator);
 	rec->time = TimePoint(pos);
-	while(*pos!='\0') pos++;
-	pos++;
+	pos+=13;
 	strcpy(rec->symbol, pos);
 	while(*pos!='\0') pos++;
 	pos++;
