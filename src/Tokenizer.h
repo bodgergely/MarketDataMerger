@@ -9,19 +9,23 @@ class Tokenizer
 public:
 	Tokenizer(char separator) : _sep(separator) {}
 	~Tokenizer() {}
-	std::vector<std::string> tokenize(const std::string& line) const
+	std::vector<const char*> tokenize(const char* line, int tokens) const
 	{
-		size_t pos = 0;
-		std::vector<std::string> tokenz;
-		while(pos < line.size())
+		int nToks = 0;
+		size_t line_len = strlen(line);
+		std::vector<const char*> markers;
+		const char* endOfLine = line + line_len;
+		char* currMarker = line;
+
+		markers.push_back(currMarker);
+		for(int i=0;i<tokens-1;i++)
 		{
-			size_t fi = pos;
-			while(fi<line.size() && line[fi]!=_sep)
-				++fi;
-			tokenz.push_back(line.substr(pos, fi-pos));
-			pos = fi+1;
+			while(currMarker!=_sep)
+				++currMarker;
+			markers.push_back(currMarker+1);
 		}
-		return tokenz;
+
+		return markers;
 	}
 
 private:

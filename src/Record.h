@@ -2,7 +2,6 @@
 #define _RECORD_H
 
 #include "TimePoint.h"
-#include "Tokenizer.h"
 #include "CommonDefs.h"
 #include <sstream>
 
@@ -42,31 +41,58 @@ private:
 };
 
 
-void _sanityCheck(const string& line)
+void _sanityCheck(const char* line)
 {
-	if(line.size() == 0 || isspace(line[0]))
+	if(strlen(line) == 0 || isspace(line[0]))
 		throw RecordInvalid(line);
 }
 
-// might fail badly if the data structure is not correct
-void _parseLine(RecordPtr rec, const string& line, const Tokenizer& tokenizer)
+
+void _splitLine(char* line, char separator)
 {
-	bool result = true;
-	_sanityCheck(line);		//TODO
-	vector<string> tokenz = tokenizer.tokenize(line);  // TODO
-	rec->time = TimePoint(tokenz[0]);
-	strcpy(rec->symbol, tokenz[1].c_str());	//TODO
-	rec->bid = stod(tokenz[2]);
-	rec->bid_size = stoi(tokenz[3]);
-	rec->ask = stod(tokenz[4]);
-	rec->ask_size = stoi(tokenz[5]);
+	while(*line!='\0')
+	{
+		if(*line == '\r')
+			*line = '\0';
+
+		if(*line == separator)
+			*line = '\0';
+		++line;
+	}
 }
 
-void initRecord(RecordPtr rec, const string& line, const Tokenizer& tokenizer, FeedID feedID)
+
+
+// might fail badly if the data structure is not correct
+void _parseLine(RecordPtr rec, char* line, char separator)
+{
+	bool result = true;
+	char* pos = line;
+	_sanityCheck(line);		//TODO
+	_splitLine(line, separator);
+	rec->time = TimePoint(pos);
+	while(*pos!='\0') pos++;
+	pos++;
+	strcpy(rec->symbol, pos);
+	while(*pos!='\0') pos++;
+	pos++;
+	rec->bid = atof(pos);
+	while(*pos!='\0') pos++;
+	pos++;
+	rec->bid_size = atoi(pos);
+	while(*pos!='\0') pos++;
+	pos++;
+	rec->ask = atof(pos);
+	while(*pos!='\0') pos++;
+	pos++;
+	rec->ask_size = atoi(pos);
+}
+
+void initRecord(RecordPtr rec, char* line, char separator, FeedID feedID)
 {
 	rec->symbol;
 	rec->feedID = feedID;
-	_parseLine(rec, line, tokenizer);
+	_parseLine(rec, line, separator);
 }
 
 void initRecord(RecordPtr rec, const TimePoint& tp, const char* symbol_, double bidPrice, uint bidSize, double askPrice, uint askSize, const FeedID& feedid_)

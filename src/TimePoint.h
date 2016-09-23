@@ -15,10 +15,6 @@ public:
 	{
 
 	}
-	TimePoint(const string& time) : TimePoint(time.c_str())
-	{
-
-	}
 	TimePoint(const char* time)
 	{
 		sscanf(time, timeFormatString,

@@ -12,7 +12,7 @@ public:
 	InputReader() : _valid(true), _entriesRead(0){}
 	virtual ~InputReader(){}
 	bool isValid() const {return _valid;}
-	virtual bool readLine(std::string&) = 0;
+	virtual bool readLine(char* ) = 0;
 	virtual unsigned int numOfEntriesRead() const {return _entriesRead;}
 protected:
 	bool _valid;
@@ -36,8 +36,9 @@ public:
 		_entries.push(line);
 	}
 
-	virtual bool readLine(std::string& line)
+	virtual bool readLine(char* lin)
 	{
+		std::string line = lin;
 		if(_entries.size()>0)
 		{
 			line = _entries.front();
@@ -78,9 +79,9 @@ public:
 
 
 
-	bool readLine(std::string& line)
+	bool readLine(char* line)
 	{
-        if(std::getline(_inputStream, line))
+        if(_inputStream.getline(line, 256))
         {
         	_entriesRead++;
         	return true;

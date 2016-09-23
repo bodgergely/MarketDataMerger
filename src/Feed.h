@@ -11,14 +11,13 @@ using namespace std;
 class Feed
 {
 public:
-	Feed(const InputReaderPtr& input, FeedID feedID) : _feedID(feedID), _input(input), _cache(nullptr)
+	Feed(const InputReaderPtr& input, char separator, FeedID feedID) : _feedID(feedID), _input(input), _cache(nullptr), _separator(separator)
 	{
 	}
 	~Feed() {}
 	const bool 	 		readNextRecordToCache()
 	{
-		string line;
-		Tokenizer tokenizer(',');
+		char line[256];
 		if(_input->isValid())
 		{
 			_input->readLine(line);
@@ -26,7 +25,7 @@ public:
 			try
 			{
 				RecordPtr rec = (Record*)RecordMemPool::malloc();
-				initRecord(rec, line, tokenizer, _feedID);
+				initRecord(rec, line, _separator, _feedID);
 				_cache = rec;
 				return true;
 			}
@@ -50,6 +49,7 @@ protected:
 	FeedID			_feedID;
 	InputReaderPtr 	_input;
 	RecordPtr		_cache;
+	char			_separator;
 };
 
 typedef std::shared_ptr<Feed> FeedPtr;

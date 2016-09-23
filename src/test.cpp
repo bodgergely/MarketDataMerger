@@ -1,4 +1,3 @@
-#include "Tokenizer.h"
 #include "InputReader.h"
 #include "Feed.h"
 #include "Book.h"
@@ -8,20 +7,6 @@
 using namespace std;
 
 using CompositeTopLevel = CompositeBook::CompositeTopLevel;
-
-TEST(Tokenizer,tokenize)
-{
-	Tokenizer tokenizer(',');
-	string s{"09:00:00.007,SPY,205.24,1138,205.25,406"};
-	vector<string> tokz = tokenizer.tokenize(s);
-	ASSERT_EQ(6,tokz.size());
-	ASSERT_EQ("09:00:00.007",tokz[0]);
-	ASSERT_EQ("SPY",tokz[1]);
-	ASSERT_EQ("205.24",tokz[2]);
-	ASSERT_EQ("1138",tokz[3]);
-	ASSERT_EQ("205.25",tokz[4]);
-	ASSERT_EQ("406",tokz[5]);
-}
 
 
 class BlockingQueueTest : public testing::Test
@@ -150,11 +135,11 @@ TEST(MockInputReader, data)
 	ASSERT_EQ(true, reader.isValid());
 	ASSERT_EQ(0, reader.numOfEntriesRead());
 	ASSERT_EQ(3, reader.size());
-	string in;
 	int i = 0;
-	while(reader.readLine(in))
+	char line[256];
+	while(reader.readLine(line))
 	{
-		ASSERT_EQ(feed[i], in);
+		ASSERT_EQ(feed[i], string(line));
 		i++;
 	}
 	ASSERT_EQ(false, reader.isValid());
@@ -204,13 +189,13 @@ TEST(ConsolidatedFeed, sortByTimeStamp)
 		"09:00:00.014,SPY,205.24,264,205.25,200"};
 
 	InputReaderPtr mockFeedA{InputReaderPtr(new MockInputReader{inputA})};
-	FeedPtr feed_a{FeedPtr(new Feed(mockFeedA, 0))};
+	FeedPtr feed_a{FeedPtr(new Feed(mockFeedA, ',', 0))};
 
 	InputReaderPtr mockFeedB{InputReaderPtr(new MockInputReader{inputB})};
-	FeedPtr feed_b{FeedPtr(new Feed(mockFeedB, 0))};
+	FeedPtr feed_b{FeedPtr(new Feed(mockFeedB, ',', 0))};
 
 	InputReaderPtr mockFeedC{InputReaderPtr(new MockInputReader{inputC})};
-	FeedPtr feed_c{FeedPtr(new Feed(mockFeedC, 0))};
+	FeedPtr feed_c{FeedPtr(new Feed(mockFeedC, ',', 0))};
 
 	ConsolidatedFeed cfeed;
 	cfeed.addFeed(feed_a);
@@ -230,7 +215,6 @@ TEST(ConsolidatedFeed, sortByTimeStamp)
 	ASSERT_EQ(inputA.size()+inputB.size()+inputC.size(), recordCount);
 }
 
-Tokenizer tokenizer(',');
 
 TEST(CompositeBook, noCross)
 {

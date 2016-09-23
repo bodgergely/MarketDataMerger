@@ -19,7 +19,7 @@ public:
 		FeedID feedid = 0;
 		for(const string& file : inputFiles)
 		{
-			FeedPtr feed{new Feed(new FileInputReader(file), feedid)};
+			FeedPtr feed{new Feed(new FileInputReader(file), ',', feedid)};
 			_feed.addFeed(std::move(feed));
 			feedid++;
 		}
