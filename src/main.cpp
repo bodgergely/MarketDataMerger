@@ -1,10 +1,12 @@
 
+#include <sched.h>
 #include "CommonDefs.h"
 #include "Feed.h"
 #include "Book.h"
 #include "InputReader.h"
 #include "Logger.h"
 #include "MarketDataConsumer.h"
+
 
 using namespace std;
 
@@ -51,9 +53,10 @@ private:
 
 int main(int argc, char** argv)
 {
-	cout << "Record: " << sizeof(Record) << endl;
-	cout << "TimePoint: " << sizeof(TimePoint) << endl;
+	cout << "Record size: " << sizeof(Record) << endl;
+	cout << "TimePoint size: " << sizeof(TimePoint) << endl;
 	auto start = chrono::system_clock::now();
+
 	vector<string> infiles;
 	for(int i=1;i<argc;i++)
 	{

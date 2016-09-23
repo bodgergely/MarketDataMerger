@@ -26,7 +26,7 @@ public:
 			update(rec);
 	}
 
-	const unordered_map<string, BookStatistics>& writeBookStatistics() const
+	const void writeBookStatistics() const
 	{
 		for(const auto& p : _books)
 		{
@@ -36,7 +36,7 @@ public:
 
 private:
 
-	void update(const RecordPtr record)
+	inline void update(const RecordPtr record)
 	{
 
 		const string& symbol = record->symbol;

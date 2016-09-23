@@ -17,6 +17,10 @@ cout: main.cpp test.cpp
 	g++ $(CFLAGS_DEBUG) -o ../bin/gcc/test-driver-g test.cpp -lpthread -lgtest -lgtest_main -lboost_system
 	g++ $(CFLAGS) -o ../bin/gcc/mdm main.cpp -lboost_system
 	g++ $(CFLAGS) -o ../bin/gcc/test-driver test.cpp -lpthread -lgtest -lgtest_main -lboost_system
+	clang++ $(CFLAGS_DEBUG) -o ../bin/clang/mdm-g main.cpp -lboost_system
+	clang++ $(CFLAGS_DEBUG) -o ../bin/clang/test-driver-g test.cpp -lpthread -lgtest -lgtest_main -lboost_system
+	clang++ $(CFLAGS) -o ../bin/clang/mdm main.cpp -lboost_system
+	clang++ $(CFLAGS) -o ../bin/clang/test-driver test.cpp -lpthread -lgtest -lgtest_main -lboost_system
 	
 
 .PHONY: clean
