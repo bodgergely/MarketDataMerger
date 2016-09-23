@@ -59,14 +59,12 @@ public:
 	~Book() {}
 	//accessors
 	inline const string& Symbol() const {return _symbol;}
-	inline const TimePoint& LastUpdateTime() const {return _lastUpdate;}
 	inline const Side& bid() const {return _bid;}
 	inline const Side& ask() const {return _ask;}
 
 	void update(const RecordPtr record)
 	{
 		assert(record->feedID==_feedID);
-		_lastUpdate = record->time;
 		_bid.update(record->bid, record->bid_size);
 		_ask.update(record->ask, record->ask_size);
 	}
@@ -74,14 +72,13 @@ public:
 	string toString() const
 	{
 		stringstream ss;
-		ss << LastUpdateTime().toString() << "," << Symbol() << "," << _bid.price() << "," << _bid.qty() << "," << _ask.price() << "," << _ask.qty();
+		ss << Symbol() << "," << _bid.price() << "," << _bid.qty() << "," << _ask.price() << "," << _ask.qty();
 		return ss.str();
 	}
 
 private:
 	string 	  _symbol;
 	FeedID	  _feedID;
-	TimePoint _lastUpdate;
 	Side	  _bid;
 	Side	  _ask;
 };
@@ -235,13 +232,6 @@ public:
 	BookStatistics() {}
 	BookStatistics(const string& symbol) : _symbol(symbol) {}
 
-	void updateTopLevelChangeLatency(const chrono::high_resolution_clock::time_point& receiveTime)
-	{
-		increaseUpdateCount();
-		unsigned latency = chrono::duration_cast<chrono::microseconds>(chrono::high_resolution_clock::now() - receiveTime).count();
-		updateLatencyAverage(latency);
-	}
-
 	bool trySetBid(double p)
 	{
 		if(p < _minBid){
@@ -262,82 +252,29 @@ public:
 			return false;
 	}
 
+	inline void increaseUpdateCount() {++_updateCount;}
+
 
 	const string& Symbol() const {return _symbol;}
 	double MinBid() const {return _minBid;}
 	double MaxAsk() const {return _maxAsk;}
 	unsigned int UpdateCount() const {return _updateCount;}
 	//microsec
-	double		AvgUpdateTopBookLatency() const {return _avgUpdateLatency;}
-
-	void sortLatencies()
-	{
-		std::sort(_latencies.begin(), _latencies.end(), std::less<unsigned>());
-	}
-
-	unsigned MinLatency() const
-	{
-		if(_latencies.size() > 0)
-			return _latencies[0];
-		else
-			return 0;
-	}
-
-	unsigned MaxLatency() const
-	{
-		if(_latencies.size() > 0)
-			return _latencies[_latencies.size()-1];
-		else
-			return 0;
-	}
-
-	unsigned MedianLatency() const
-	{
-		if(_latencies.size() > 0)
-		{
-			size_t mi = _latencies.size() / 2;
-			return _latencies[mi];
-		}
-		else
-			return 0;
-	}
 
 	string toString() const
 	{
 		stringstream ss;
 		// stupid place to do it but I am short on time
 
-		ss << "Symbol " << Symbol() << ",AvgUpdateLatency " << AvgUpdateTopBookLatency() << ",MinLatency " << MinLatency() << ",MaxLatency " << MaxLatency() << ",MedianLatency " << MedianLatency() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
+		ss << "Symbol " << Symbol() << ",UpdateCount " << UpdateCount() << ",MinBid " << MinBid() << ",MaxAsk " << MaxAsk();
 		return ss.str();
 	}
-
-private:
-
-	void updateLatencyAverage(double latency)
-	{
-		if(_avgUpdateLatency == 0.0)
-		{
-			_avgUpdateLatency = latency;
-		}
-		else
-		{
-			_avgUpdateLatency = _avgUpdateLatency + ((latency - _avgUpdateLatency)/_updateCount);
-		}
-		_latencies.push_back(latency);
-	}
-
-	inline void increaseUpdateCount() {++_updateCount;}
 
 private:
 	string		 _symbol;
 	double	 	 _minBid{std::numeric_limits<double>::max()};
 	double       _maxAsk{std::numeric_limits<double>::min()};
 	unsigned int _updateCount{0};
-	double	 	 _avgUpdateLatency{0.0};
-	unsigned	 _minLatency{std::numeric_limits<unsigned>::max()};
-	unsigned	 _maxLatency{0};
-	// for median, percentiles
-	vector<unsigned> _latencies;
 };
 
 
@@ -348,22 +285,20 @@ public:
 	{
 	public:
 		CompositeTopLevel() {}
-		CompositeTopLevel(const string& symbol, const Side& bid, const Side& ask, const TimePoint& lastUpdate) : _symbol(symbol), _bid(bid), _ask(ask), _lastUpdate(lastUpdate) {}
+		CompositeTopLevel(const string& symbol, const Side& bid, const Side& ask) : _symbol(symbol), _bid(bid), _ask(ask) {}
 		inline const string& Symbol() const {return _symbol;}
 		inline const Side& Bid() const {return _bid;}
 		inline const Side& Ask() const {return _ask;}
-		inline const TimePoint& LastUpdate() const {return _lastUpdate;}
 		string toString() const
 		{
 			stringstream ss;
-			ss << LastUpdate().toString() << "," << Symbol() << "," << Bid().price() << "," << Bid().qty() << "," << Ask().price() << "," << Ask().qty();
+			ss << Symbol() << "," << Bid().price() << "," << Bid().qty() << "," << Ask().price() << "," << Ask().qty();
 			return ss.str();
 		}
 	private:
 		string _symbol;
 		Side _bid;
 		Side _ask;
-		TimePoint _lastUpdate;
 	};
 
 	CompositeBook(const string& symbol) : _symbol(symbol), _statistics(symbol) {}
@@ -371,8 +306,7 @@ public:
 
 
 	// these are supposed to be called on the same thread as the the one ehich updates the book - they arent thread safe
-	const TimePoint& LastUpdate() const { return _lastChangeTime; }
-	CompositeTopLevel getTopBook() const {return CompositeBook::CompositeTopLevel(_symbol, _topLevel.Bid(), _topLevel.Ask(), _lastChangeTime);}
+	CompositeTopLevel getTopBook() const {return CompositeBook::CompositeTopLevel(_symbol, _topLevel.Bid(), _topLevel.Ask());}
 
 	const BookStatistics& getStatistics() const
 	{
@@ -416,7 +350,7 @@ public:
 		{
 			_lastChangeTime = record->time;
 			topChanged = true;
-			updateStats(record);
+			updateStats();
 		}
 
 		assert(checkConsistency());
@@ -472,9 +406,10 @@ private:
 
 	}
 
-	void updateStats(const RecordPtr record)
+	void updateStats()
 	{
 		//std::lock_guard<std::mutex> lock(_statisticsMutex);
+		_statistics.increaseUpdateCount();
 		_statistics.trySetBid(_topLevel.Bid().price());
 		_statistics.trySetAsk(_topLevel.Ask().price());
 	}
